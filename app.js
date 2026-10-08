@@ -1,6 +1,5 @@
 /* =========================================================
-   FPL Command Center v4 — app.js
-   Full Roast Mode · Family League Edition
+   FPL Command Center v4.1 — app.js
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -8,11 +7,11 @@ const FPL_API = 'https://fantasy.premierleague.com/api';
 const IMG_BASE = 'https://resources.premierleague.com/premierleague/photos/players/110x140';
 
 const FAMILY = [
-  { id: '1115676', name: 'Adyb Saliki',    emoji: '🧠' },
-  { id: '3719511', name: 'Yassine Saied',  emoji: '🚀' },
-  { id: '3844150', name: 'Ismail Saliki',  emoji: '🎲' },
-  { id: '1115993', name: 'Youssef Said',   emoji: '🐢' },
-  { id: '6849321', name: 'Zakaria Said',   emoji: '😎' },
+  { id: '1115676', name: 'Adyb Saliki',   emoji: '🧠' },
+  { id: '3719511', name: 'Yassine Saied', emoji: '🚀' },
+  { id: '3844150', name: 'Ismail Saliki', emoji: '🎲' },
+  { id: '1115993', name: 'Youssef Said',  emoji: '🐢' },
+  { id: '6849321', name: 'Zakaria Said',  emoji: '😎' },
 ];
 
 const POS_MAP = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };
@@ -31,15 +30,8 @@ const SHAME_EMOJI = (pts) => {
 };
 const CHIP_EMOJI = { wildcard: '🃏', bboost: '🎲', '3xc': '⚡', freehit: '🏠' };
 const CHIP_NAME = { wildcard: 'Wildcard', bboost: 'Bench Boost', '3xc': 'Triple Captain', freehit: 'Free Hit' };
-const MOOD_EMOJI = {
-  hot: '🔥',
-  climbing: '📈',
-  steady: '➡️',
-  slipping: '📉',
-  dead: '💀',
-};
+const MOOD_EMOJI = { hot: '🔥', climbing: '📈', steady: '➡️', slipping: '📉', dead: '💀' };
 
-/* ========== ROAST QUOTES LIBRARY ========== */
 const ROAST_BEST = [
   "Peaked early. Enjoy it while it lasts.",
   "Wildcard magic or pure luck? We'll never know.",
@@ -52,7 +44,6 @@ const ROAST_BEST = [
   "Somebody call Guinness — this was elite.",
   "The template delivered. Fair play.",
 ];
-
 const ROAST_WORST = [
   "Could have been worse. It wasn't much better.",
   "Even the bench outscored him this week.",
@@ -64,10 +55,7 @@ const ROAST_WORST = [
   "Someone check on him.",
   "The wooden spoon is calling.",
   "Trusted his gut. His gut was wrong. Again.",
-  "FPL is not for everyone. Exhibit A.",
-  "The differential didn't differential.",
 ];
-
 const ROAST_WEEKLY = [
   "Family group chat is going to be spicy this week.",
   "Somebody's getting roasted in the WhatsApp group.",
@@ -88,7 +76,8 @@ function emptyState() {
   return {
     players: [], plans: [], budget: 100, bank: 0, freeTransfers: 1,
     managerName: '', bootstrap: null, familyData: null,
-    currentGW: null, lastSync: 0,
+    currentGW: null, nextGW: null, nextDeadline: null, lastSync: 0,
+    priceRisers: [], priceFallers: [],
   };
 }
 function loadFor(id) {
@@ -105,7 +94,9 @@ function saveState() {
     budget: state.budget, bank: state.bank,
     freeTransfers: state.freeTransfers, managerName: state.managerName,
     bootstrap: state.bootstrap, familyData: state.familyData,
-    currentGW: state.currentGW, lastSync: state.lastSync,
+    currentGW: state.currentGW, nextGW: state.nextGW, nextDeadline: state.nextDeadline,
+    lastSync: state.lastSync,
+    priceRisers: state.priceRisers, priceFallers: state.priceFallers,
   };
   try { localStorage.setItem(storageKey(teamId), JSON.stringify(toSave)); }
   catch (e) { toast('Storage full — export a backup', true); }
@@ -114,9 +105,7 @@ function saveState() {
 /* ========== UTILS ========== */
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function fmt(n) { return '£' + Number(n || 0).toFixed(1) + 'm'; }
-function escapeHtml(s) {
-  return String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
-}
+function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 function toast(msg, isError = false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -124,21 +113,22 @@ function toast(msg, isError = false) {
   requestAnimationFrame(() => t.classList.add('show'));
   setTimeout(() => t.classList.remove('show'), 3000);
 }
-function getFamInfo(id) {
-  return FAMILY.find(f => f.id === id) || { name: 'Unknown', emoji: '👤' };
-}
-function randomQuote(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-function fmtRank(r) {
-  if (!r || r <= 0) return '—';
-  return '#' + r.toLocaleString();
+function randomQuote(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function fmtRank(r) { if (!r || r <= 0) return '—'; return '#' + r.toLocaleString(); }
+function formatTransfers(n) {
+  const abs = Math.abs(n || 0);
+  const sign = n < 0 ? '-' : '+';
+  if (abs >= 1000000) return sign + (abs / 1000000).toFixed(1) + 'M';
+  if (abs >= 1000) return sign + Math.round(abs / 1000) + 'k';
+  return sign + abs;
 }
 
 /* ========== THEME ========== */
 function applyTheme(mode) {
-  document.body.classList.toggle('light-mode', mode === 'light');
-  const emoji = mode === 'light' ? '☀️' : '🌙';
+  const isLight = mode === 'light';
+  document.documentElement.classList.toggle('light-mode', isLight);
+  document.body.classList.toggle('light-mode', isLight);
+  const emoji = isLight ? '☀️' : '🌙';
   ['theme-toggle-welcome', 'theme-toggle-app'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.textContent = emoji;
@@ -157,19 +147,15 @@ function toggleTheme() {
   applyTheme(mode);
 })();
 
-/* ========== PROXY FETCH ========== */
+/* ========== PROXY ========== */
 async function fpl(path) {
   const url = PROXY + encodeURIComponent(FPL_API + path);
   const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
 }
-
-/* ========== PLAYER IMAGE ========== */
 function playerImgUrl(el) {
   if (!el || !el.photo) return '';
-  // FPL stores "p123456.jpg" — swap extension and prepend code
-  const code = el.code || 0;
   const ext = el.photo.replace(/^\D+/, '').replace('.jpg', '');
   return `${IMG_BASE}/${ext}.png`;
 }
@@ -181,20 +167,22 @@ async function syncAll(showToast = true) {
   if (showToast) toast('🔄 Syncing from FPL...');
 
   try {
-    // 1. Bootstrap
     const boot = await fpl('/bootstrap-static/');
-    state.bootstrap = {
-      elements: boot.elements,
-      teams: boot.teams,
-      events: boot.events,
-    };
+    state.bootstrap = { elements: boot.elements, teams: boot.teams, events: boot.events };
 
-    const currentGW = boot.events.find(e => e.is_current)?.id
-      || boot.events.find(e => e.is_next)?.id
-      || 1;
+    // Smart GW detection: highest finished GW, else is_next
+    const finished = boot.events.filter(e => e.finished);
+    let currentGW;
+    if (finished.length > 0) currentGW = Math.max(...finished.map(e => e.id));
+    else currentGW = boot.events.find(e => e.is_next)?.id || 1;
     state.currentGW = currentGW;
 
-    // 2. Family data
+    // Next deadline
+    const nextEv = boot.events.find(e => e.is_next) || boot.events.find(e => !e.finished);
+    state.nextGW = nextEv?.id || null;
+    state.nextDeadline = nextEv?.deadline_time || null;
+
+    // Family
     const familyData = [];
     for (const m of FAMILY) {
       try {
@@ -210,20 +198,48 @@ async function syncAll(showToast = true) {
     }
     state.familyData = familyData;
 
-    // 3. My squad
+    // My squad
     const mine = familyData.find(f => f.id === teamId);
     if (mine && mine.picks) mergeMySquad(mine.picks);
+
+    // Price changes
+    fetchPriceChanges(boot.elements);
 
     state.lastSync = Date.now();
     saveState();
     renderAll();
-    if (showToast) toast('✅ Synced — all 5 managers loaded');
+    if (showToast) toast(`✅ Synced — GW${currentGW} loaded`);
   } catch (e) {
     console.error(e);
     if (showToast) toast('Sync failed: ' + e.message, true);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync All from FPL'; }
   }
+}
+
+function fetchPriceChanges(elements) {
+  if (!elements) return;
+  const withData = elements.filter(e => e.minutes > 0);
+  const risers = withData
+    .filter(e => e.cost_change_event > 0 || (e.transfers_in_event - e.transfers_out_event) > 50000)
+    .sort((a, b) => (b.cost_change_event * 1e6 + (b.transfers_in_event - b.transfers_out_event)) - (a.cost_change_event * 1e6 + (a.transfers_in_event - a.transfers_out_event)))
+    .slice(0, 5)
+    .map(e => ({
+      name: e.web_name, price: e.now_cost / 10,
+      change: e.cost_change_event / 10,
+      netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0),
+    }));
+  const fallers = withData
+    .filter(e => e.cost_change_event < 0 || (e.transfers_out_event - e.transfers_in_event) > 50000)
+    .sort((a, b) => (a.cost_change_event * 1e6 + (a.transfers_out_event - a.transfers_in_event)) - (b.cost_change_event * 1e6 + (b.transfers_out_event - b.transfers_in_event)))
+    .slice(0, 5)
+    .map(e => ({
+      name: e.web_name, price: e.now_cost / 10,
+      change: e.cost_change_event / 10,
+      netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0),
+    }));
+  state.priceRisers = risers;
+  state.priceFallers = fallers;
 }
 
 function mergeMySquad(picksData) {
@@ -235,8 +251,7 @@ function mergeMySquad(picksData) {
     const el = bp.elements.find(x => x.id === p.element);
     if (!el) return null;
     return {
-      id: uid(),
-      fplId: el.id,
+      id: uid(), fplId: el.id,
       name: el.web_name,
       fullName: `${el.first_name} ${el.second_name}`,
       pos: POS_MAP[el.element_type],
@@ -254,7 +269,6 @@ function mergeMySquad(picksData) {
       news: el.news,
       form: parseFloat(el.form) || 0,
       totalPoints: el.total_points,
-      chanceOfPlaying: el.chance_of_playing_next_round,
     };
   }).filter(Boolean);
 
@@ -286,8 +300,8 @@ function startApp() {
   if (!/^\d+$/.test(id)) return toast('Team ID must be numbers only', true);
   teamId = id;
   state = loadFor(id);
-  const fam = getFamInfo(id);
-  if (!state.managerName) state.managerName = fam.name;
+  const fam = FAMILY.find(f => f.id === id);
+  if (fam && !state.managerName) state.managerName = fam.name;
   localStorage.setItem('fpl-cc-last-team', id);
   document.getElementById('welcome').style.display = 'none';
   document.getElementById('app').style.display = 'block';
@@ -307,7 +321,7 @@ function logout() {
 }
 function showHelp() { document.getElementById('help-modal').classList.add('active'); }
 
-/* ========== NAVIGATION ========== */
+/* ========== NAV ========== */
 function switchView(name, el) {
   document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
@@ -326,9 +340,13 @@ function startCountdown() {
   const wrap = document.getElementById('hdr-deadline-wrap');
   if (!el) return;
   function tick() {
-    const next = state?.bootstrap?.events?.find(e => e.is_next);
-    if (!next || !next.deadline_time) { el.textContent = '—'; return; }
-    const diff = new Date(next.deadline_time) - new Date();
+    let deadline = state?.nextDeadline;
+    if (!deadline && state?.bootstrap?.events) {
+      const next = state.bootstrap.events.find(e => e.is_next) || state.bootstrap.events.find(e => !e.finished);
+      deadline = next?.deadline_time;
+    }
+    if (!deadline) { el.textContent = '—'; return; }
+    const diff = new Date(deadline) - new Date();
     if (diff <= 0) { el.textContent = 'LIVE'; return; }
     const d = Math.floor(diff / 86400000);
     const h = Math.floor((diff % 86400000) / 3600000);
@@ -348,6 +366,8 @@ function renderAll() {
   renderHeader();
   renderSquad();
   renderStats();
+  renderCaptainSuggestion();
+  renderPriceChanges();
   renderMiniLeaderboard();
   renderLeaderboard();
   renderTimeline();
@@ -359,9 +379,10 @@ function renderAll() {
 function renderHeader() {
   const squadValue = state.players.reduce((s, p) => s + Number(p.price || 0), 0);
   const mine = state.familyData?.find(f => f.id === teamId);
-  const histCurrent = mine?.history?.current?.[0];
-  const totalPts = histCurrent?.total_points || 0;
-  const overallRank = histCurrent?.overall_rank || 0;
+  const histCurrent = mine?.history?.current || [];
+  const latest = histCurrent[histCurrent.length - 1];
+  const totalPts = latest?.total_points || 0;
+  const overallRank = latest?.overall_rank || 0;
 
   document.getElementById('hdr-manager').textContent = state.managerName || '—';
   document.getElementById('hdr-points').textContent = totalPts || '—';
@@ -381,13 +402,11 @@ function renderStats() {
 
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
-
-  // GW points (latest)
-  const gwPts = current[current.length - 1]?.points || 0;
+  const latest = current[current.length - 1];
+  const gwPts = latest?.points || 0;
   document.getElementById('stat-gwpts').textContent = gwPts || '—';
   document.getElementById('stat-gwpts-sub').textContent = state.currentGW ? `GW${state.currentGW}` : 'This week';
 
-  // Best/Worst
   if (current.length > 0) {
     const best = current.reduce((m, g) => g.points > m.points ? g : m, current[0]);
     const worst = current.reduce((m, g) => g.points < m.points ? g : m, current[0]);
@@ -403,6 +422,93 @@ function renderStats() {
   }
 }
 
+function renderCaptainSuggestion() {
+  const el = document.getElementById('captain-suggestion');
+  if (!el) return;
+  if (!state.bootstrap || !state.players.length) {
+    el.innerHTML = '<div class="empty"><span class="emoji">©️</span>Sync to see captain suggestions</div>';
+    return;
+  }
+  const bp = state.bootstrap;
+  const elementsMap = {};
+  bp.elements.forEach(e => elementsMap[e.id] = e);
+
+  const candidates = state.players.map(p => {
+    const el2 = elementsMap[p.fplId];
+    if (!el2) return null;
+    const form = parseFloat(el2.form) || 0;
+    const pts = el2.total_points || 0;
+    const ict = parseFloat(el2.ict_index) || 0;
+    const minutes = el2.minutes || 0;
+    const score = form * 3 + pts * 0.1 + ict * 0.05 + (minutes > 500 ? 5 : 0);
+    return {
+      name: p.name, team: p.team, pos: p.pos, price: p.price,
+      form, pts, score,
+      ownership: parseFloat(el2.selected_by_percent) || 0,
+    };
+  }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 3);
+
+  if (!candidates.length) { el.innerHTML = '<div class="empty">No candidates</div>'; return; }
+
+  const medals = ['🥇', '🥈', '🥉'];
+  el.innerHTML = candidates.map((c, i) => `
+    <div class="lb-row">
+      <div class="lb-rank">${medals[i]}</div>
+      <div>
+        <div class="lb-name">${escapeHtml(c.name)} <span class="pos-badge" data-pos="${c.pos}">${c.pos}</span></div>
+        <div class="lb-teamname">${escapeHtml(c.team)} · ${fmt(c.price)} · ${c.ownership.toFixed(1)}% owned</div>
+      </div>
+      <div class="lb-stat">${c.form.toFixed(1)}<small>Form</small></div>
+      <div class="lb-stat">${c.pts}<small>Pts</small></div>
+      <div class="lb-stat">${Math.round(c.score)}<small>Score</small></div>
+    </div>
+  `).join('');
+}
+
+function renderPriceChanges() {
+  const el = document.getElementById('price-changes');
+  if (!el) return;
+
+  const risers = state.priceRisers || [];
+  const fallers = state.priceFallers || [];
+
+  if (!risers.length && !fallers.length) {
+    el.innerHTML = '<div class="empty"><span class="emoji">💹</span>Sync to see price changes</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px">
+      <div>
+        <div style="font-weight:800;font-size:0.75rem;color:var(--mint);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">📈 Rising</div>
+        ${risers.map(r => `
+          <div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
+            <div>
+              <div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div>
+              <div class="lb-teamname">${fmt(r.price)}</div>
+            </div>
+            <div class="lb-stat" style="color:var(--mint);font-size:0.8rem">${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}</div>
+            <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
+          </div>
+        `).join('') || '<div style="padding:8px;color:var(--muted);font-size:0.75rem">No risers today</div>'}
+      </div>
+      <div>
+        <div style="font-weight:800;font-size:0.75rem;color:var(--red);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">📉 Falling</div>
+        ${fallers.map(r => `
+          <div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
+            <div>
+              <div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div>
+              <div class="lb-teamname">${fmt(r.price)}</div>
+            </div>
+            <div class="lb-stat" style="color:var(--red);font-size:0.8rem">${r.change.toFixed(1)}</div>
+            <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
+          </div>
+        `).join('') || '<div style="padding:8px;color:var(--muted);font-size:0.75rem">No fallers today</div>'}
+      </div>
+    </div>
+  `;
+}
+
 function renderSquad() {
   const grid = document.getElementById('squad-grid');
   if (!grid) return;
@@ -415,22 +521,21 @@ function renderSquad() {
     ? [...state.players].sort((a,b) => (a.order ?? 99) - (b.order ?? 99))
     : [...state.players].sort((a,b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || b.price - a.price);
 
-  // Get best captain option
   const bp = state.bootstrap;
   const elementsMap = {};
   if (bp) bp.elements.forEach(e => elementsMap[e.id] = e);
+
   const bestCap = [...state.players]
     .filter(p => !p.bench)
     .map(p => {
-      const el = elementsMap[p.fplId];
-      const form = el ? parseFloat(el.form) || 0 : 0;
+      const el2 = elementsMap[p.fplId];
+      const form = el2 ? parseFloat(el2.form) || 0 : 0;
       return { ...p, score: form };
     })
     .sort((a, b) => b.score - a.score)[0];
 
   grid.innerHTML = sorted.map(p => {
-    const el = elementsMap[p.fplId];
-    const fixture = el ? getNextFixture(el.team) : null;
+    const el2 = elementsMap[p.fplId];
     const isRecommendedCap = bestCap && p.id === bestCap.id;
     const teamBadge = p.teamId ? `https://resources.premierleague.com/premierleague25/badges/${p.teamId}.svg` : '';
     const injury = p.status && p.status !== 'a';
@@ -452,32 +557,16 @@ function renderSquad() {
           </span>
         </div>
         <div class="player-stats">
-          <div class="player-stat">
-            <div class="stat-val">${p.gwPoints || 0}</div>
-            <div class="stat-lbl">GW</div>
-          </div>
-          <div class="player-stat">
-            <div class="stat-val">${p.totalPoints || 0}</div>
-            <div class="stat-lbl">Total</div>
-          </div>
-          <div class="player-stat">
-            <div class="stat-val">${(p.form || 0).toFixed(1)}</div>
-            <div class="stat-lbl">Form</div>
-          </div>
+          <div class="player-stat"><div class="stat-val">${p.gwPoints || 0}</div><div class="stat-lbl">GW</div></div>
+          <div class="player-stat"><div class="stat-val">${p.totalPoints || 0}</div><div class="stat-lbl">Total</div></div>
+          <div class="player-stat"><div class="stat-val">${(p.form || 0).toFixed(1)}</div><div class="stat-lbl">Form</div></div>
         </div>
-        ${fixture ? `<div class="fixture-box" data-diff="${fixture.diff}">⚽ ${fixture.team} (${fixture.diff})</div>` : ''}
         ${isRecommendedCap && !p.captain ? '<div style="font-size:0.6rem;color:var(--gold);margin-top:6px;font-weight:800">⭐ Cap pick</div>' : ''}
         ${p.bench ? '<div class="bench-label">Bench</div>' : ''}
         <button class="remove-btn" onclick="event.stopPropagation(); removePlayer('${p.id}')">✕</button>
       </div>
     `;
   }).join('');
-}
-
-function getNextFixture(teamId) {
-  if (!state.bootstrap) return null;
-  const fixtures = state.bootstrap.elements; // placeholder, real fixtures need separate call
-  return null;
 }
 
 function renderTimeline() {
@@ -535,27 +624,22 @@ function renderPlans() {
   }).join('');
 }
 
-/* ========== MINI LEADERBOARD (Dashboard) ========== */
+/* ========== MINI LEADERBOARD ========== */
 function renderMiniLeaderboard() {
   const wrap = document.getElementById('mini-leaderboard');
   if (!wrap) return;
-
   if (!state.familyData || state.familyData.length === 0) {
     wrap.innerHTML = '<div class="empty" style="padding:16px;font-size:0.8rem"><span class="emoji" style="font-size:1.5rem">🏆</span>Sync to load family standings</div>';
     return;
   }
-
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
-    const totalPts = hist[0]?.total_points || 0;
-    const gwPts = hist[hist.length - 1]?.points || 0;
+    const latest = hist[hist.length - 1];
     return {
-      id: m.id,
-      name: m.name,
-      emoji: m.emoji || '',
+      id: m.id, name: m.name, emoji: m.emoji || '',
       teamName: m.entry?.name || '',
-      totalPts,
-      gwPts,
+      totalPts: latest?.total_points || 0,
+      gwPts: latest?.points || 0,
     };
   }).sort((a, b) => b.totalPts - a.totalPts);
 
@@ -572,7 +656,7 @@ function renderMiniLeaderboard() {
   `).join('');
 }
 
-/* ========== FULL FAMILY LEAGUE ========== */
+/* ========== FAMILY LEAGUE ========== */
 function renderLeaderboard() {
   renderWeeklyRoast();
   renderMainLeaderboard();
@@ -600,36 +684,31 @@ function renderWeeklyRoast() {
 function buildRoastLines() {
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
+    const latest = hist[hist.length - 1];
     return {
-      id: m.id,
-      name: m.name,
-      emoji: m.emoji,
+      id: m.id, name: m.name, emoji: m.emoji,
       teamName: m.entry?.name || '',
-      totalPts: hist[0]?.total_points || 0,
-      gwPts: hist[hist.length - 1]?.points || 0,
-      gwList: hist,
+      totalPts: latest?.total_points || 0,
+      gwPts: latest?.points || 0,
     };
   }).sort((a, b) => b.totalPts - a.totalPts);
 
   if (!rows.length) return ['Sync to load data.'];
-
   const leader = rows[0];
   const last = rows[rows.length - 1];
   const bestGW = [...rows].sort((a, b) => b.gwPts - a.gwPts)[0];
   const worstGW = [...rows].sort((a, b) => a.gwPts - b.gwPts)[0];
-  const gap = leader.totalPts - rows[1]?.totalPts || 0;
+  const gap = leader.totalPts - (rows[1]?.totalPts || 0);
 
-  const lines = [
+  return [
     `👑 <strong>${leader.emoji} ${leader.name}</strong> sits on top with <strong>${leader.totalPts} pts</strong>.`,
     gap > 0 && gap < 10 ? `🔥 Only <strong>${gap} pts</strong> separate top from 2nd. Tense.` : '',
-    gap >= 10 ? `📈 The gap at the top is <strong>${gap} pts</strong>. ${leader.name} is running away.` : '',
+    gap >= 10 ? `📈 The gap at the top is <strong>${gap} pts</strong>. ${leader.name.split(' ')[0]} is running away.` : '',
     bestGW.gwPts > 0 ? `⚡ <strong>${bestGW.emoji} ${bestGW.name}</strong> top-scored this week with <strong>${bestGW.gwPts} pts</strong>.` : '',
-    worstGW.gwPts >= 0 && worstGW.id !== bestGW.id ? `💀 <strong>${worstGW.emoji} ${worstGW.name}</strong> had a rough one — only <strong>${worstGW.gwPts} pts</strong>.` : '',
+    worstGW.id !== bestGW.id ? `💀 <strong>${worstGW.emoji} ${worstGW.name}</strong> had a rough one — only <strong>${worstGW.gwPts} pts</strong>.` : '',
     `🐌 <strong>${last.emoji} ${last.name}</strong> props up the table with <strong>${last.totalPts} pts</strong>.`,
     `_ ${randomQuote(ROAST_WEEKLY)} _`,
   ].filter(Boolean);
-
-  return lines;
 }
 
 function renderMainLeaderboard() {
@@ -639,17 +718,19 @@ function renderMainLeaderboard() {
     card.innerHTML = '<div class="empty"><span class="emoji">🏆</span>Sync to load standings</div>';
     return;
   }
-
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
-    const totalPts = hist[0]?.total_points || 0;
-    const gwPts = hist[hist.length - 1]?.points || 0;
-    const overallRank = hist[0]?.overall_rank || 0;
-    return { ...m, totalPts, gwPts, overallRank };
+    const latest = hist[hist.length - 1];
+    return {
+      ...m,
+      totalPts: latest?.total_points || 0,
+      gwPts: latest?.points || 0,
+      overallRank: latest?.overall_rank || 0,
+    };
   }).sort((a, b) => b.totalPts - a.totalPts);
 
   card.innerHTML = rows.map((r, i) => {
-    const mood = calcMood(r, rows);
+    const mood = calcMood(r);
     return `
       <div class="lb-row ${r.id === teamId ? 'me' : ''}">
         <div class="lb-rank">${RANK_EMOJI[i] || (i + 1)}</div>
@@ -665,7 +746,7 @@ function renderMainLeaderboard() {
   }).join('');
 }
 
-function calcMood(row, allRows) {
+function calcMood(row) {
   const hist = row.history?.current || [];
   if (hist.length < 2) return 'steady';
   const gw = hist[hist.length - 1]?.points || 0;
@@ -673,12 +754,11 @@ function calcMood(row, allRows) {
   const best = Math.max(...hist.map(g => g.points));
   if (gw === best) return 'hot';
   if (gw > avg + 5) return 'climbing';
-  if (gw < avg - 5) return 'slipping';
   if (gw < avg - 15) return 'dead';
+  if (gw < avg - 5) return 'slipping';
   return 'steady';
 }
 
-/* ========== BEST GW ========== */
 function renderBestGW() {
   const card = document.getElementById('best-gw-card');
   if (!card) return;
@@ -686,25 +766,20 @@ function renderBestGW() {
     card.innerHTML = '<div class="empty"><span class="emoji">🔥</span>Sync to load</div>';
     return;
   }
-
   const entries = state.familyData.map(m => {
     const hist = m.history?.current || [];
     if (!hist.length) return null;
     const best = hist.reduce((mx, g) => g.points > mx.points ? g : mx, hist[0]);
     return {
-      id: m.id,
-      name: m.name,
-      emoji: m.emoji,
+      id: m.id, name: m.name, emoji: m.emoji,
       teamName: m.entry?.name || '',
-      points: best.points,
-      gw: best.event,
-      chip: best.active_chip || best.chip || null,
+      points: best.points, gw: best.event,
+      chip: best.active_chip || null,
     };
   }).filter(Boolean).sort((a, b) => b.points - a.points);
 
   const medals = ['🥇', '🥈', '🥉'];
   const tailEmoji = ['😴', '🐌'];
-
   card.innerHTML = entries.map((e, i) => {
     const medal = medals[i] || tailEmoji[i - 3] || '·';
     const chipLabel = e.chip ? `${CHIP_EMOJI[e.chip] || ''} ${CHIP_NAME[e.chip] || e.chip}` : '— no chip';
@@ -725,7 +800,6 @@ function renderBestGW() {
   }).join('');
 }
 
-/* ========== WORST GW ========== */
 function renderWorstGW() {
   const card = document.getElementById('worst-gw-card');
   if (!card) return;
@@ -733,23 +807,18 @@ function renderWorstGW() {
     card.innerHTML = '<div class="empty"><span class="emoji">❄️</span>Sync to load</div>';
     return;
   }
-
   const entries = state.familyData.map(m => {
     const hist = m.history?.current || [];
     if (!hist.length) return null;
     const worst = hist.reduce((mn, g) => g.points < mn.points ? g : mn, hist[0]);
     return {
-      id: m.id,
-      name: m.name,
-      emoji: m.emoji,
+      id: m.id, name: m.name, emoji: m.emoji,
       teamName: m.entry?.name || '',
-      points: worst.points,
-      gw: worst.event,
+      points: worst.points, gw: worst.event,
     };
   }).filter(Boolean).sort((a, b) => b.points - a.points);
 
   const medals = ['🥇', '🥈', '🥉'];
-
   card.innerHTML = entries.map((e, i) => {
     const medal = medals[i] || (i === entries.length - 1 ? '🗑️' : '·');
     const shame = SHAME_EMOJI(e.points);
@@ -770,7 +839,6 @@ function renderWorstGW() {
   }).join('');
 }
 
-/* ========== TROPHY CABINET ========== */
 function renderTrophyCabinet() {
   const el = document.getElementById('trophy-cabinet');
   if (!el) return;
@@ -778,28 +846,21 @@ function renderTrophyCabinet() {
     el.innerHTML = '<div class="empty"><span class="emoji">🏅</span>Sync to load</div>';
     return;
   }
-
-  // For each GW, find the highest scorer
   const gwWinners = {};
   state.familyData.forEach(m => {
     const hist = m.history?.current || [];
     hist.forEach(g => {
       if (!gwWinners[g.event] || g.points > gwWinners[g.event].points) {
         gwWinners[g.event] = {
-          event: g.event,
-          points: g.points,
-          id: m.id,
-          name: m.name,
-          emoji: m.emoji,
+          event: g.event, points: g.points,
+          id: m.id, name: m.name, emoji: m.emoji,
           chip: g.active_chip || null,
         };
       }
     });
   });
-
   const list = Object.values(gwWinners).sort((a, b) => b.event - a.event).slice(0, 20);
   if (!list.length) { el.innerHTML = '<div class="empty">No GWs played yet</div>'; return; }
-
   el.innerHTML = `<div class="trophy-grid">${list.map(w => `
     <div class="trophy-item">
       <div class="trophy-gw">GW${w.event}</div>
@@ -811,7 +872,6 @@ function renderTrophyCabinet() {
   `).join('')}</div>`;
 }
 
-/* ========== HALL OF SHAME ========== */
 function renderHallOfShame() {
   const el = document.getElementById('hall-of-shame');
   if (!el) return;
@@ -819,42 +879,29 @@ function renderHallOfShame() {
     el.innerHTML = '<div class="empty"><span class="emoji">💀</span>Sync to load</div>';
     return;
   }
-
   const bp = state.bootstrap;
   const elementsMap = {};
   bp.elements.forEach(e => elementsMap[e.id] = e);
 
-  // For each GW, find the worst captain pick across family
-  const worstCaps = {};
-
+  const items = [];
   state.familyData.forEach(m => {
-    const hist = m.history?.current || [];
     if (!m.picks || !m.picks.picks) return;
-
-    // Current GW captain (we only have latest picks)
     const capPick = m.picks.picks.find(p => p.is_captain);
     if (!capPick) return;
     const el2 = elementsMap[capPick.element];
     if (!el2) return;
-    const capPts = capPick.points || 0;
-    const gw = state.currentGW || 0;
-
-    if (!worstCaps[gw] || capPts < worstCaps[gw].points) {
-      worstCaps[gw] = {
-        gw,
-        points: capPts,
-        player: el2.web_name,
-        id: m.id,
-        name: m.name,
-        emoji: m.emoji,
-      };
-    }
+    items.push({
+      gw: state.currentGW,
+      points: capPick.points || 0,
+      player: el2.web_name,
+      id: m.id, name: m.name, emoji: m.emoji,
+    });
   });
 
-  const list = Object.values(worstCaps).sort((a, b) => b.gw - a.gw).slice(0, 10);
-  if (!list.length) { el.innerHTML = '<div class="empty">No data yet</div>'; return; }
+  items.sort((a, b) => a.points - b.points);
+  if (!items.length) { el.innerHTML = '<div class="empty">No captain data yet</div>'; return; }
 
-  el.innerHTML = list.map(w => `
+  el.innerHTML = items.map(w => `
     <div class="shame-item">
       <div class="shame-gw">GW${w.gw}</div>
       <div class="shame-player">© ${escapeHtml(w.player)}</div>
@@ -864,7 +911,6 @@ function renderHallOfShame() {
   `).join('');
 }
 
-/* ========== GLANCE ========== */
 function renderGlance() {
   const el = document.getElementById('weekly-glance');
   if (!el) return;
@@ -874,16 +920,15 @@ function renderGlance() {
   }
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
+    const latest = hist[hist.length - 1];
     return {
-      name: m.name,
-      emoji: m.emoji,
-      gwPts: hist[hist.length - 1]?.points || 0,
-      totalPts: hist[0]?.total_points || 0,
+      name: m.name, emoji: m.emoji,
+      gwPts: latest?.points || 0,
+      totalPts: latest?.total_points || 0,
     };
   }).filter(r => r.totalPts > 0);
 
   if (!rows.length) { el.innerHTML = '<div class="empty">No data</div>'; return; }
-
   const best = [...rows].sort((a, b) => b.gwPts - a.gwPts)[0];
   const worst = [...rows].sort((a, b) => a.gwPts - b.gwPts)[0];
   const avg = Math.round(rows.reduce((s, r) => s + r.gwPts, 0) / rows.length);
@@ -934,7 +979,6 @@ function renderHistory() {
     return;
   }
 
-  // Points bar chart
   const maxPts = Math.max(...gws.map(g => g.points), 1);
   chartPoints.innerHTML = `
     <div class="chart-bars">
@@ -947,7 +991,6 @@ function renderHistory() {
     </div>
   `;
 
-  // Rank chart
   const ranks = gws.map(g => g.overall_rank).filter(r => r > 0);
   if (ranks.length > 1) {
     const minRank = Math.min(...ranks);
@@ -975,17 +1018,12 @@ function renderHistory() {
             return `<circle cx="${x}" cy="${y}" r="4" fill="#00ff87"><title>GW${gws[i].event}: #${r.toLocaleString()}</title></circle>`;
           }).join('')}
         </svg>
-        <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--muted);padding:4px 8px">
-          <span>Best: #${minRank.toLocaleString()}</span>
-          <span>Worst: #${maxRank.toLocaleString()}</span>
-        </div>
       </div>
     `;
   } else {
     chartRank.innerHTML = '<div class="empty">Not enough data yet</div>';
   }
 
-  // You vs Average
   const maxBoth = Math.max(...gws.map(g => Math.max(g.points, g.average_entry_score || 0)), 1);
   chartAverage.innerHTML = `
     <div class="chart-bars">
@@ -1004,7 +1042,6 @@ function renderHistory() {
     </div>
   `;
 
-  // Chips
   const usedChips = {};
   gws.forEach(g => { if (g.active_chip) usedChips[g.active_chip] = g.event; });
   const allChips = ['wildcard', 'bboost', '3xc', 'freehit'];
@@ -1019,7 +1056,6 @@ function renderHistory() {
     `;
   }).join('')}</div>`;
 
-  // GW table
   tbody.innerHTML = [...gws].reverse().map(g => `
     <tr>
       <td>GW${g.event}</td>
@@ -1040,17 +1076,14 @@ function renderPlayers() {
     grid.innerHTML = '<div class="empty"><span class="emoji">🔍</span>Sync to search players</div>';
     return;
   }
-
   const q = (document.getElementById('player-search')?.value || '').toLowerCase();
   const posFilter = document.getElementById('player-filter-pos')?.value || '';
   const sortBy = document.getElementById('player-sort')?.value || 'total_points';
-
   const teamMap = {};
   state.bootstrap.teams.forEach(t => teamMap[t.id] = t.short_name);
 
   let list = state.bootstrap.elements.map(el => ({
-    id: el.id,
-    name: el.web_name,
+    id: el.id, name: el.web_name,
     fullName: `${el.first_name} ${el.second_name}`,
     pos: POS_MAP[el.element_type],
     price: el.now_cost / 10,
@@ -1059,8 +1092,7 @@ function renderPlayers() {
     form: parseFloat(el.form) || 0,
     points: el.total_points,
     ownership: parseFloat(el.selected_by_percent) || 0,
-    status: el.status,
-    news: el.news,
+    status: el.status, news: el.news,
   }));
 
   if (q) list = list.filter(p => p.fullName.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
@@ -1072,9 +1104,7 @@ function renderPlayers() {
     if (sortBy === 'selected_by_percent') return b.ownership - a.ownership;
     return b.points - a.points;
   });
-
   list = list.slice(0, 100);
-
   if (list.length === 0) { grid.innerHTML = '<div class="empty">No players found</div>'; return; }
 
   grid.innerHTML = list.map(p => {
@@ -1107,9 +1137,9 @@ function optimizeLineup() {
   bp.elements.forEach(e => elementsMap[e.id] = e);
 
   const scored = state.players.map(p => {
-    const el = elementsMap[p.fplId];
-    const form = el ? parseFloat(el.form) || 0 : 0;
-    const pts = el ? el.total_points : 0;
+    const el2 = elementsMap[p.fplId];
+    const form = el2 ? parseFloat(el2.form) || 0 : 0;
+    const pts = el2 ? el2.total_points : 0;
     const score = form * 2 + pts / 10;
     return { ...p, score };
   });
@@ -1118,7 +1148,6 @@ function optimizeLineup() {
   scored.forEach(p => byPos[p.pos].push(p));
   Object.keys(byPos).forEach(k => byPos[k].sort((a, b) => b.score - a.score));
 
-  // Best XI: 1 GK, 3-5 DEF, 2-5 MID, 1-3 FWD — use 3-4-3 as default
   const xi = [byPos.GK[0]];
   byPos.DEF.slice(0, 3).forEach(p => xi.push(p));
   byPos.MID.slice(0, 4).forEach(p => xi.push(p));
@@ -1148,13 +1177,12 @@ function optimizeLineup() {
     const pl = state.players.find(pp2 => pp2.id === x.id);
     if (pl) pl.order = benchPos++;
   });
-
   saveState();
   renderSquad();
   toast(`🤖 Optimized — Captain: ${captain.name}`);
 }
 
-/* ========== PLAYER MODAL ========== */
+/* ========== MODALS ========== */
 let editingPlayerId = null;
 let editingPlanId = null;
 
@@ -1165,7 +1193,6 @@ function openPlayerModal(id = null) {
   const posEl = document.getElementById('p-pos');
   const priceEl = document.getElementById('p-price');
   const teamEl = document.getElementById('p-team');
-
   if (id) {
     const p = state.players.find(x => x.id === id);
     if (!p) return;
@@ -1186,7 +1213,6 @@ function savePlayer() {
   const team = document.getElementById('p-team').value.trim().toUpperCase();
   if (!name) return toast('Enter a name', true);
   if (!price || price <= 0) return toast('Enter a valid price', true);
-
   if (editingPlayerId) {
     Object.assign(state.players.find(x => x.id === editingPlayerId), { name, pos, price, team });
     toast('Player updated ✏️');
@@ -1196,12 +1222,10 @@ function savePlayer() {
   }
   saveState(); renderAll(); closeModal('player-modal');
 }
-
 function removePlayer(id) {
   state.players = state.players.filter(p => p.id !== id);
   saveState(); renderAll(); toast('Removed');
 }
-
 function openBudgetModal() {
   document.getElementById('b-budget').value = state.budget;
   document.getElementById('b-bank').value = state.bank;
@@ -1220,7 +1244,6 @@ function saveFT() {
   state.freeTransfers = parseInt(document.getElementById('ft-value').value) || 0;
   saveState(); renderAll(); closeModal('ft-modal'); toast('FT saved 🔄');
 }
-
 function openPlanModal(id = null, gw = null) {
   editingPlanId = id;
   const title = document.getElementById('plan-modal-title');
@@ -1230,7 +1253,6 @@ function openPlanModal(id = null, gw = null) {
   const inEl = document.getElementById('pl-in');
   const inPEl = document.getElementById('pl-in-price');
   const chipEl = document.getElementById('pl-chip');
-
   if (id) {
     const p = state.plans.find(x => x.id === id);
     title.textContent = 'Edit Plan';
@@ -1243,7 +1265,6 @@ function openPlanModal(id = null, gw = null) {
   }
   document.getElementById('plan-modal').classList.add('active');
 }
-
 function savePlan() {
   const gw = parseInt(document.getElementById('pl-gw').value);
   const outName = document.getElementById('pl-out').value.trim();
@@ -1252,7 +1273,6 @@ function savePlan() {
   const inPrice = parseFloat(document.getElementById('pl-in-price').value) || 0;
   const chip = document.getElementById('pl-chip').value;
   if (!gw || gw < 1 || gw > 38) return toast('GW must be 1-38', true);
-
   if (editingPlanId) {
     Object.assign(state.plans.find(x => x.id === editingPlanId), { gw, outName, outPrice, inName, inPrice, chip });
     toast('Plan updated ✏️');
@@ -1267,7 +1287,6 @@ function removePlan(id) {
   saveState(); renderAll(); toast('Removed');
 }
 
-/* ========== MODAL HELPERS ========== */
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 document.querySelectorAll('.modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('active'); });
@@ -1276,11 +1295,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'));
 });
 
-/* ========== EXPORT / RESET ========== */
 function exportData() {
   const data = JSON.stringify({
-    teamId,
-    players: state.players, plans: state.plans,
+    teamId, players: state.players, plans: state.plans,
     budget: state.budget, bank: state.bank,
     freeTransfers: state.freeTransfers, managerName: state.managerName,
   }, null, 2);
@@ -1292,7 +1309,6 @@ function exportData() {
   URL.revokeObjectURL(a.href);
   toast('Exported 📦');
 }
-
 function resetAll() {
   if (!confirm('Reset your squad and plans? Your Team ID stays saved.')) return;
   const keep = { managerName: state.managerName, lastSync: state.lastSync };
