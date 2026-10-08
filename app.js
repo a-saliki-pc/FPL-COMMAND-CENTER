@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v4.3 — app.js
-   Captain Picks: Best + Worst side by side
+   FPL Command Center v4.4 — app.js
+   Full season captain picks (best + worst)
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -72,6 +72,7 @@ let state = null;
 let teamId = null;
 let pickedId = null;
 let liveDataCache = {};
+let captainHistoryCache = null;
 
 function storageKey(id) { return `fpl-cc-v4:${id}`; }
 function emptyState() {
@@ -173,6 +174,7 @@ async function fetchLiveGW(gw) {
     return map;
   } catch (e) {
     console.warn('Live fetch failed for GW' + gw, e);
+    liveDataCache[gw] = {};
     return {};
   }
 }
@@ -217,10 +219,12 @@ async function syncAll(showToast = true) {
 
     fetchPriceChanges(boot.elements);
 
-    // Prefetch live data for current + previous GW
+    // Reset caches on fresh sync
     liveDataCache = {};
+    captainHistoryCache = null;
+
+    // Prefetch live data for the current GW (fast)
     await fetchLiveGW(currentGW);
-    if (currentGW > 1) await fetchLiveGW(currentGW - 1);
 
     state.lastSync = Date.now();
     saveState();
@@ -889,7 +893,67 @@ function renderTrophyCabinet() {
   `).join('')}</div>`;
 }
 
-/* ========== CAPTAIN PICKS (BEST + WORST) ========== */
+/* ========== CAPTAIN PICKS — FULL SEASON ========== */
+async function fetchAllCaptainPicks() {
+  if (captainHistoryCache) return captainHistoryCache;
+
+  const bp = state.bootstrap;
+  if (!bp) return [];
+
+  const elementsMap = {};
+  bp.elements.forEach(e => elementsMap[e.id] = e);
+
+  const currentGW = state.currentGW || 1;
+  const result = [];
+
+  // Prefetch all live GW data in parallel
+  const gwNums = [];
+  for (let gw = 1; gw <= currentGW; gw++) gwNums.push(gw);
+  await Promise.all(gwNums.map(gw => fetchLiveGW(gw)));
+
+  for (const m of FAMILY) {
+    const seasonPicks = [];
+
+    // Fetch all picks in parallel
+    const picksByGW = await Promise.all(
+      gwNums.map(gw => fpl(`/entry/${m.id}/event/${gw}/picks/`).catch(() => null))
+    );
+
+    gwNums.forEach((gw, i) => {
+      const picksData = picksByGW[i];
+      if (!picksData || !picksData.picks) return;
+      const cap = picksData.picks.find(p => p.is_captain);
+      if (!cap) return;
+
+      const el2 = elementsMap[cap.element];
+      if (!el2) return;
+
+      const liveMap = liveDataCache[gw] || {};
+      const live = liveMap[cap.element];
+      let pts = 0;
+      if (live && live.stats) pts = (live.stats.total_points || 0) * 2;
+      else if (cap.points) pts = cap.points * 2;
+
+      seasonPicks.push({
+        gw,
+        player: el2.web_name,
+        pos: POS_MAP[el2.element_type],
+        points: pts,
+      });
+    });
+
+    result.push({
+      id: m.id,
+      name: m.name,
+      emoji: m.emoji,
+      seasonPicks,
+    });
+  }
+
+  captainHistoryCache = result;
+  return result;
+}
+
 async function renderCaptainPicks() {
   const worstEl = document.getElementById('worst-captain-card');
   const bestEl = document.getElementById('best-captain-card');
@@ -901,64 +965,57 @@ async function renderCaptainPicks() {
     return;
   }
 
-  worstEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Loading...</div>';
-  bestEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Loading...</div>';
+  worstEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Scanning full season...</div>';
+  bestEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Scanning full season...</div>';
 
-  const bp = state.bootstrap;
-  const elementsMap = {};
-  bp.elements.forEach(e => elementsMap[e.id] = e);
-
-  const currentGW = state.currentGW;
-  const liveMap = await fetchLiveGW(currentGW);
-
-  const picks = [];
-
-  for (const m of state.familyData) {
-    if (!m.picks || !m.picks.picks) continue;
-    const cap = m.picks.picks.find(p => p.is_captain);
-    if (!cap) continue;
-    const el2 = elementsMap[cap.element];
-    let pts = 0;
-    const live = liveMap[cap.element];
-    if (live && live.stats) pts = (live.stats.total_points || 0) * 2;
-    else if (cap.points) pts = cap.points * 2;
-    picks.push({
-      gw: currentGW,
-      points: pts,
-      player: el2 ? el2.web_name : '?',
-      pos: el2 ? POS_MAP[el2.element_type] : '',
-      name: m.name,
-      emoji: m.emoji,
-      id: m.id,
-    });
-  }
-
-  if (!picks.length) {
-    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>No captain data</div>';
-    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>No captain data</div>';
+  let allCaptains;
+  try {
+    allCaptains = await fetchAllCaptainPicks();
+  } catch (e) {
+    console.warn(e);
+    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>Could not load captain history</div>';
+    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>Could not load captain history</div>';
     return;
   }
 
-  const sortedAsc = [...picks].sort((a, b) => a.points - b.points);
-  const sortedDesc = [...picks].sort((a, b) => b.points - a.points);
+  const perManager = allCaptains.map(m => {
+    if (!m.seasonPicks.length) return null;
+    const sorted = [...m.seasonPicks].sort((a, b) => b.points - a.points);
+    return {
+      id: m.id,
+      name: m.name,
+      emoji: m.emoji,
+      best: sorted[0],
+      worst: sorted[sorted.length - 1],
+    };
+  }).filter(Boolean);
 
-  const renderRow = (p, type) => {
+  if (!perManager.length) {
+    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>No captain data found</div>';
+    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>No captain data found</div>';
+    return;
+  }
+
+  const worstList = [...perManager].sort((a, b) => a.worst.points - b.worst.points);
+  const bestList = [...perManager].sort((a, b) => b.best.points - a.best.points);
+
+  const renderRow = (row, pick, type) => {
     const emoji = type === 'worst'
-      ? SHAME_EMOJI(p.points)
-      : (p.points >= 14 ? '🚀' : p.points >= 10 ? '🔥' : p.points >= 6 ? '📈' : '👍');
+      ? SHAME_EMOJI(pick.points)
+      : (pick.points >= 20 ? '🚀' : pick.points >= 14 ? '🔥' : pick.points >= 10 ? '📈' : '👍');
     const color = type === 'worst' ? 'var(--red)' : 'var(--gold)';
     return `
       <div class="shame-item">
-        <div class="shame-gw" style="${type === 'best' ? 'color:var(--gold)' : ''}">GW${p.gw}</div>
-        <div class="shame-player">© ${escapeHtml(p.player)} <span class="pos-badge" data-pos="${p.pos}" style="font-size:0.5rem">${p.pos}</span></div>
-        <div class="shame-pts" style="color:${color}">${p.points} pts ${emoji}</div>
-        <div class="shame-manager">${p.emoji || ''} ${escapeHtml(p.name.split(' ')[0])}</div>
+        <div class="shame-gw" style="${type === 'best' ? 'color:var(--gold)' : ''}">GW${pick.gw}</div>
+        <div class="shame-player">© ${escapeHtml(pick.player)} <span class="pos-badge" data-pos="${pick.pos}" style="font-size:0.5rem">${pick.pos}</span></div>
+        <div class="shame-pts" style="color:${color}">${pick.points} pts ${emoji}</div>
+        <div class="shame-manager">${row.emoji || ''} ${escapeHtml(row.name.split(' ')[0])}</div>
       </div>
     `;
   };
 
-  worstEl.innerHTML = sortedAsc.map(p => renderRow(p, 'worst')).join('');
-  bestEl.innerHTML = sortedDesc.map(p => renderRow(p, 'best')).join('');
+  worstEl.innerHTML = worstList.map(r => renderRow(r, r.worst, 'worst')).join('');
+  bestEl.innerHTML = bestList.map(r => renderRow(r, r.best, 'best')).join('');
 }
 
 function renderGlance() {
