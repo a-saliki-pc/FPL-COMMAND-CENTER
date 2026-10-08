@@ -1,5 +1,6 @@
 /* =========================================================
-   FPL Command Center v4.2 — app.js
+   FPL Command Center v4.3 — app.js
+   Captain Picks: Best + Worst side by side
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -161,6 +162,21 @@ function playerImgUrl(el) {
   return `${IMG_BASE}/${ext}.png`;
 }
 
+/* ========== LIVE DATA ========== */
+async function fetchLiveGW(gw) {
+  if (liveDataCache[gw]) return liveDataCache[gw];
+  try {
+    const data = await fpl(`/event/${gw}/live/`);
+    const map = {};
+    (data.elements || []).forEach(el => { map[el.id] = el; });
+    liveDataCache[gw] = map;
+    return map;
+  } catch (e) {
+    console.warn('Live fetch failed for GW' + gw, e);
+    return {};
+  }
+}
+
 /* ========== SYNC ========== */
 async function syncAll(showToast = true) {
   const btn = document.getElementById('sync-btn');
@@ -171,19 +187,16 @@ async function syncAll(showToast = true) {
     const boot = await fpl('/bootstrap-static/');
     state.bootstrap = { elements: boot.elements, teams: boot.teams, events: boot.events };
 
-    // Smart GW detection: highest finished GW, else is_next
     const finished = boot.events.filter(e => e.finished);
     let currentGW;
     if (finished.length > 0) currentGW = Math.max(...finished.map(e => e.id));
     else currentGW = boot.events.find(e => e.is_next)?.id || 1;
     state.currentGW = currentGW;
 
-    // Next deadline
     const nextEv = boot.events.find(e => e.is_next) || boot.events.find(e => !e.finished);
     state.nextGW = nextEv?.id || null;
     state.nextDeadline = nextEv?.deadline_time || null;
 
-    // Family
     const familyData = [];
     for (const m of FAMILY) {
       try {
@@ -199,16 +212,15 @@ async function syncAll(showToast = true) {
     }
     state.familyData = familyData;
 
-    // My squad
     const mine = familyData.find(f => f.id === teamId);
     if (mine && mine.picks) mergeMySquad(mine.picks);
 
-    // Price changes
     fetchPriceChanges(boot.elements);
 
-    // Prefetch live GW data for captain points
+    // Prefetch live data for current + previous GW
     liveDataCache = {};
     await fetchLiveGW(currentGW);
+    if (currentGW > 1) await fetchLiveGW(currentGW - 1);
 
     state.lastSync = Date.now();
     saveState();
@@ -219,20 +231,6 @@ async function syncAll(showToast = true) {
     if (showToast) toast('Sync failed: ' + e.message, true);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync All from FPL'; }
-  }
-}
-
-async function fetchLiveGW(gw) {
-  if (liveDataCache[gw]) return liveDataCache[gw];
-  try {
-    const data = await fpl(`/event/${gw}/live/`);
-    const map = {};
-    (data.elements || []).forEach(el => { map[el.id] = el; });
-    liveDataCache[gw] = map;
-    return map;
-  } catch (e) {
-    console.warn('Live fetch failed for GW' + gw, e);
-    return {};
   }
 }
 
@@ -683,7 +681,7 @@ function renderLeaderboard() {
   renderWorstGW();
   renderTrophyCabinet();
   renderGlance();
-  renderHallOfShame().catch(e => console.warn('Hall of shame failed', e));
+  renderCaptainPicks().catch(e => console.warn('Captain picks failed', e));
 }
 
 function renderWeeklyRoast() {
@@ -891,16 +889,20 @@ function renderTrophyCabinet() {
   `).join('')}</div>`;
 }
 
-/* ========== HALL OF SHAME (async, uses live data) ========== */
-async function renderHallOfShame() {
-  const el = document.getElementById('hall-of-shame');
-  if (!el) return;
+/* ========== CAPTAIN PICKS (BEST + WORST) ========== */
+async function renderCaptainPicks() {
+  const worstEl = document.getElementById('worst-captain-card');
+  const bestEl = document.getElementById('best-captain-card');
+  if (!worstEl || !bestEl) return;
+
   if (!state.familyData || !state.familyData.length || !state.bootstrap) {
-    el.innerHTML = '<div class="empty"><span class="emoji">💀</span>Sync to load</div>';
+    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>Sync to load</div>';
+    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>Sync to load</div>';
     return;
   }
 
-  el.innerHTML = '<div class="empty" style="padding:20px"><span class="emoji">⏳</span>Loading captain data...</div>';
+  worstEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Loading...</div>';
+  bestEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Loading...</div>';
 
   const bp = state.bootstrap;
   const elementsMap = {};
@@ -909,58 +911,54 @@ async function renderHallOfShame() {
   const currentGW = state.currentGW;
   const liveMap = await fetchLiveGW(currentGW);
 
-  // Also get previous GWs for a fuller hall of shame
-  const items = [];
+  const picks = [];
 
   for (const m of state.familyData) {
-    if (!m.history || !m.history.current) continue;
-
-    // Try each GW (from most recent backwards), find the captain pick
-    // We only have the current picks data. For history we need to try fetching past picks.
-    // To keep it fast, we'll do current GW from picks + previous GWs from history's chip names
-
-    // Current GW captain
-    let capPick = null;
-    if (m.picks && m.picks.picks) {
-      capPick = m.picks.picks.find(p => p.is_captain);
-    }
-
-    if (capPick) {
-      const el2 = elementsMap[capPick.element];
-      const live = liveMap[capPick.element];
-      let capPts = 0;
-      if (live) {
-        const basePts = live.stats?.total_points ?? live.points ?? 0;
-        capPts = basePts * 2;
-      } else if (capPick.points) {
-        capPts = capPick.points * 2;
-      }
-      items.push({
-        gw: currentGW,
-        points: capPts,
-        player: el2 ? el2.web_name : 'Unknown',
-        id: m.id,
-        name: m.name,
-        emoji: m.emoji,
-      });
-    }
+    if (!m.picks || !m.picks.picks) continue;
+    const cap = m.picks.picks.find(p => p.is_captain);
+    if (!cap) continue;
+    const el2 = elementsMap[cap.element];
+    let pts = 0;
+    const live = liveMap[cap.element];
+    if (live && live.stats) pts = (live.stats.total_points || 0) * 2;
+    else if (cap.points) pts = cap.points * 2;
+    picks.push({
+      gw: currentGW,
+      points: pts,
+      player: el2 ? el2.web_name : '?',
+      pos: el2 ? POS_MAP[el2.element_type] : '',
+      name: m.name,
+      emoji: m.emoji,
+      id: m.id,
+    });
   }
 
-  if (!items.length) {
-    el.innerHTML = '<div class="empty"><span class="emoji">💀</span>No captain data available — try syncing again</div>';
+  if (!picks.length) {
+    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>No captain data</div>';
+    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>No captain data</div>';
     return;
   }
 
-  items.sort((a, b) => a.points - b.points);
+  const sortedAsc = [...picks].sort((a, b) => a.points - b.points);
+  const sortedDesc = [...picks].sort((a, b) => b.points - a.points);
 
-  el.innerHTML = items.map(w => `
-    <div class="shame-item">
-      <div class="shame-gw">GW${w.gw}</div>
-      <div class="shame-player">© ${escapeHtml(w.player)}</div>
-      <div class="shame-pts">${w.points} pts ${SHAME_EMOJI(w.points)}</div>
-      <div class="shame-manager">${w.emoji || ''} ${escapeHtml(w.name.split(' ')[0])}</div>
-    </div>
-  `).join('');
+  const renderRow = (p, type) => {
+    const emoji = type === 'worst'
+      ? SHAME_EMOJI(p.points)
+      : (p.points >= 14 ? '🚀' : p.points >= 10 ? '🔥' : p.points >= 6 ? '📈' : '👍');
+    const color = type === 'worst' ? 'var(--red)' : 'var(--gold)';
+    return `
+      <div class="shame-item">
+        <div class="shame-gw" style="${type === 'best' ? 'color:var(--gold)' : ''}">GW${p.gw}</div>
+        <div class="shame-player">© ${escapeHtml(p.player)} <span class="pos-badge" data-pos="${p.pos}" style="font-size:0.5rem">${p.pos}</span></div>
+        <div class="shame-pts" style="color:${color}">${p.points} pts ${emoji}</div>
+        <div class="shame-manager">${p.emoji || ''} ${escapeHtml(p.name.split(' ')[0])}</div>
+      </div>
+    `;
+  };
+
+  worstEl.innerHTML = sortedAsc.map(p => renderRow(p, 'worst')).join('');
+  bestEl.innerHTML = sortedDesc.map(p => renderRow(p, 'best')).join('');
 }
 
 function renderGlance() {
