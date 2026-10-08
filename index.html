@@ -18,7 +18,7 @@
 <div class="orb orb-2"></div>
 <div class="orb orb-3"></div>
 
-<!-- ==================== WELCOME ==================== -->
+<!-- WELCOME -->
 <div id="welcome" class="welcome">
   <button class="theme-toggle welcome-theme-toggle" onclick="toggleTheme()" id="theme-toggle-welcome" title="Toggle theme">🌙</button>
 
@@ -45,7 +45,7 @@
   </div>
 </div>
 
-<!-- ==================== MAIN APP ==================== -->
+<!-- MAIN APP -->
 <div id="app" style="display:none">
 
 <header>
@@ -70,7 +70,7 @@
 
 <main>
 
-  <!-- MAIN NAV -->
+  <!-- NAV -->
   <div class="main-nav">
     <button class="main-tab active" data-view="dashboard" onclick="switchView('dashboard', this)"><span class="tab-emoji">📊</span> <span class="tab-text">Dashboard</span></button>
     <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)"><span class="tab-emoji">🏆</span> <span class="tab-text">Family League</span></button>
@@ -78,7 +78,7 @@
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- ==================== VIEW: DASHBOARD ==================== -->
+  <!-- DASHBOARD -->
   <div id="view-dashboard" class="view active">
 
     <section>
@@ -86,6 +86,20 @@
       <div class="squad-controls">
         <button class="btn primary big" onclick="syncAll(true)" id="sync-btn">🔄 Sync All from FPL</button>
         <span class="sync-status" id="sync-status">Loads all 5 family squads + player data</span>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">©️ Captain Suggestion for Next GW</div>
+      <div class="leaderboard-card" id="captain-suggestion">
+        <div class="empty"><span class="emoji">©️</span>Sync to see captain suggestions</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">💹 Price Changes Tonight</div>
+      <div class="leaderboard-card" id="price-changes">
+        <div class="empty"><span class="emoji">💹</span>Sync to see price changes</div>
       </div>
     </section>
 
@@ -136,7 +150,7 @@
 
   </div>
 
-  <!-- ==================== VIEW: FAMILY LEAGUE ==================== -->
+  <!-- FAMILY LEAGUE -->
   <div id="view-leaderboard" class="view" style="display:none">
 
     <section>
@@ -190,7 +204,7 @@
 
   </div>
 
-  <!-- ==================== VIEW: HISTORY ==================== -->
+  <!-- HISTORY -->
   <div id="view-history" class="view" style="display:none">
 
     <section>
@@ -227,12 +241,7 @@
         <table class="gw-table" id="gw-table">
           <thead>
             <tr>
-              <th>GW</th>
-              <th>Points</th>
-              <th>Rank</th>
-              <th>Bank</th>
-              <th>Value</th>
-              <th>Transfers</th>
+              <th>GW</th><th>Points</th><th>Rank</th><th>Bank</th><th>Value</th><th>Transfers</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -242,7 +251,7 @@
 
   </div>
 
-  <!-- ==================== VIEW: PLAYERS ==================== -->
+  <!-- PLAYERS -->
   <div id="view-players" class="view" style="display:none">
     <section>
       <div class="section-title">🔍 Search Players</div>
@@ -274,9 +283,9 @@
   ⚡ FPL Command Center v4 · Data saved in your browser · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
 </footer>
 
-</div><!-- /app -->
+</div>
 
-<!-- ==================== MODALS ==================== -->
+<!-- MODALS -->
 
 <div class="modal-overlay" id="player-modal">
   <div class="modal">
@@ -285,10 +294,8 @@
     <div class="field-row">
       <div class="field"><label>Position</label>
         <select id="p-pos">
-          <option value="GK">GK</option>
-          <option value="DEF">DEF</option>
-          <option value="MID" selected>MID</option>
-          <option value="FWD">FWD</option>
+          <option value="GK">GK</option><option value="DEF">DEF</option>
+          <option value="MID" selected>MID</option><option value="FWD">FWD</option>
         </select>
       </div>
       <div class="field"><label>Price (£m)</label><input type="number" id="p-price" step="0.1" min="3.5" max="20"></div>
@@ -358,8 +365,7 @@
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Your data lives on your device.</strong> Use <em>Export</em> to back it up.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">2. Everyone has their own workspace.</strong> Pick your name on the welcome screen.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load your squad, all family members, and the player database — automatically via the Cloudflare worker.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Full Roast Mode is ON.</strong> Best/Worst GW rankings, weekly roasts, Hall of Shame, Trophy Cabinet — all live.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load everything automatically.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
