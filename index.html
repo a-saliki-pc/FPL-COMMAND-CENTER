@@ -182,16 +182,27 @@
     </section>
 
     <section>
-      <div class="section-title">🏅 Trophy Cabinet — GW Winners</div>
-      <div class="leaderboard-card" id="trophy-cabinet">
-        <div class="empty"><span class="emoji">🏅</span>Sync to load</div>
+      <div class="section-title">©️ Captain Picks This GW</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <div style="font-weight:800;font-size:0.75rem;color:var(--red);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;padding-left:8px">💀 Worst Captain</div>
+          <div class="leaderboard-card" id="worst-captain-card">
+            <div class="empty"><span class="emoji">💀</span>Sync to load</div>
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:800;font-size:0.75rem;color:var(--gold);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;padding-left:8px">👑 Best Captain</div>
+          <div class="leaderboard-card" id="best-captain-card">
+            <div class="empty"><span class="emoji">👑</span>Sync to load</div>
+          </div>
+        </div>
       </div>
     </section>
 
     <section>
-      <div class="section-title">💀 Hall of Shame — Worst Captains</div>
-      <div class="leaderboard-card" id="hall-of-shame">
-        <div class="empty"><span class="emoji">💀</span>Sync to load</div>
+      <div class="section-title">🏅 Trophy Cabinet — GW Winners</div>
+      <div class="leaderboard-card" id="trophy-cabinet">
+        <div class="empty"><span class="emoji">🏅</span>Sync to load</div>
       </div>
     </section>
 
@@ -365,7 +376,7 @@
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Your data lives on your device.</strong> Use <em>Export</em> to back it up.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">2. Everyone has their own workspace.</strong> Pick your name on the welcome screen.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load everything automatically.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load everything automatically via the Cloudflare worker.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
