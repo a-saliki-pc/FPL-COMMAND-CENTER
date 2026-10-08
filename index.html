@@ -4,11 +4,11 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0"/>
 <meta name="theme-color" content="#0d0221"/>
-<meta name="description" content="FPL Command Center — family league edition with auto-sync"/>
+<meta name="description" content="FPL Command Center — family league edition"/>
 <title>⚡ FPL Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
@@ -18,12 +18,14 @@
 <div class="orb orb-2"></div>
 <div class="orb orb-3"></div>
 
-<!-- ============ WELCOME SCREEN ============ -->
+<!-- ==================== WELCOME ==================== -->
 <div id="welcome" class="welcome">
+  <button class="theme-toggle welcome-theme-toggle" onclick="toggleTheme()" id="theme-toggle-welcome" title="Toggle theme">🌙</button>
+
   <div class="welcome-card">
     <div class="welcome-logo">⚡</div>
     <h1>FPL Command Center</h1>
-    <p class="welcome-sub">Family League Edition · Pick your name below</p>
+    <p class="welcome-sub">Saliki Family League · Pick your name below</p>
 
     <div class="welcome-field">
       <label>Who are you?</label>
@@ -43,17 +45,24 @@
   </div>
 </div>
 
-<!-- ============ MAIN APP ============ -->
+<!-- ==================== MAIN APP ==================== -->
 <div id="app" style="display:none">
 
 <header>
   <div class="header-inner">
-    <div class="logo"><span>⚡</span> FPL COMMAND CENTER</div>
+    <div class="logo"><span>⚡</span> <span class="logo-text">FPL COMMAND CENTER</span></div>
     <div class="header-stats">
       <div class="header-stat"><div class="label">Manager</div><div class="value" id="hdr-manager">—</div></div>
+      <div class="header-stat"><div class="label">Total</div><div class="value" id="hdr-points">—</div></div>
+      <div class="header-stat"><div class="label">Rank</div><div class="value" id="hdr-rank">—</div></div>
       <div class="header-stat"><div class="label">Bank</div><div class="value" id="hdr-bank">£0.0</div></div>
-      <div class="header-stat"><div class="label">Squad Value</div><div class="value" id="hdr-value">£0.0</div></div>
-      <div class="header-stat"><div class="label">Free Transfers</div><div class="value" id="hdr-ft">1</div></div>
+      <div class="header-stat"><div class="label">Value</div><div class="value" id="hdr-value">£0.0</div></div>
+      <div class="header-stat"><div class="label">FT</div><div class="value" id="hdr-ft">1</div></div>
+      <div class="header-stat countdown" id="hdr-deadline-wrap">
+        <div class="label">Deadline</div>
+        <div class="value" id="hdr-deadline">—</div>
+      </div>
+      <button class="btn small theme-toggle" onclick="toggleTheme()" id="theme-toggle-app" title="Toggle theme">🌙</button>
       <button class="btn small" onclick="logout()" title="Switch manager">⇄</button>
     </div>
   </div>
@@ -61,22 +70,29 @@
 
 <main>
 
-  <!-- NAV TABS -->
+  <!-- MAIN NAV -->
   <div class="main-nav">
-    <button class="main-tab active" data-view="dashboard" onclick="switchView('dashboard', this)">📊 Dashboard</button>
-    <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)">🏆 Family League</button>
-    <button class="main-tab" data-view="history" onclick="switchView('history', this)">📈 My History</button>
-    <button class="main-tab" data-view="players" onclick="switchView('players', this)">🔍 Players</button>
+    <button class="main-tab active" data-view="dashboard" onclick="switchView('dashboard', this)"><span class="tab-emoji">📊</span> <span class="tab-text">Dashboard</span></button>
+    <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)"><span class="tab-emoji">🏆</span> <span class="tab-text">Family League</span></button>
+    <button class="main-tab" data-view="history" onclick="switchView('history', this)"><span class="tab-emoji">📈</span> <span class="tab-text">My History</span></button>
+    <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- ============ VIEW: DASHBOARD ============ -->
+  <!-- ==================== VIEW: DASHBOARD ==================== -->
   <div id="view-dashboard" class="view active">
 
     <section>
-      <div class="section-title">🔄 Auto-Sync</div>
+      <div class="section-title">🔄 Sync</div>
       <div class="squad-controls">
-        <button class="btn primary big" onclick="syncAll(true)">🔄 Sync All from FPL</button>
-        <span style="color:var(--muted);font-size:0.8rem;align-self:center" id="sync-status">Loads all 5 family squads + player database</span>
+        <button class="btn primary big" onclick="syncAll(true)" id="sync-btn">🔄 Sync All from FPL</button>
+        <span class="sync-status" id="sync-status">Loads all 5 family squads + player data</span>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">🏆 Family League — Live Standings</div>
+      <div class="leaderboard-card" id="mini-leaderboard">
+        <div class="empty" style="padding:16px;font-size:0.8rem"><span class="emoji" style="font-size:1.5rem">🏆</span>Sync to load family standings</div>
       </div>
     </section>
 
@@ -84,9 +100,9 @@
       <div class="section-title">📊 Overview</div>
       <div class="stats-grid">
         <div class="stat-card"><div class="label">Squad Size</div><div class="value" id="stat-size">0/15</div><div class="sub" id="stat-size-sub">Sync to load</div></div>
-        <div class="stat-card cyan"><div class="label">Gameweeks Planned</div><div class="value" id="stat-gws">0</div><div class="sub">of 38 gameweeks</div></div>
-        <div class="stat-card pink"><div class="label">Points Hits</div><div class="value" id="stat-hits">0</div><div class="sub" id="stat-hits-sub">No hits taken</div></div>
-        <div class="stat-card gold"><div class="label">Chips Used</div><div class="value" id="stat-chips">0/4</div><div class="sub">WC · BB · TC · FH</div></div>
+        <div class="stat-card cyan"><div class="label">GW Points</div><div class="value" id="stat-gwpts">—</div><div class="sub" id="stat-gwpts-sub">This week</div></div>
+        <div class="stat-card pink"><div class="label">Best GW</div><div class="value" id="stat-best">—</div><div class="sub" id="stat-best-sub">Season best</div></div>
+        <div class="stat-card gold"><div class="label">Worst GW</div><div class="value" id="stat-worst">—</div><div class="sub" id="stat-worst-sub">Season worst</div></div>
       </div>
     </section>
 
@@ -120,12 +136,48 @@
 
   </div>
 
-  <!-- ============ VIEW: LEADERBOARD ============ -->
+  <!-- ==================== VIEW: FAMILY LEAGUE ==================== -->
   <div id="view-leaderboard" class="view" style="display:none">
+
     <section>
-      <div class="section-title">🏆 Family League Standings</div>
+      <div class="section-title">🔥 Weekly Roast</div>
+      <div class="roast-card" id="weekly-roast">
+        <div class="empty" style="padding:20px"><span class="emoji">🔥</span>Sync to see this week's roast</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">🏆 Current Standings</div>
       <div class="leaderboard-card" id="leaderboard-card">
-        <div class="empty"><span class="emoji">🏆</span>Click <strong>🔄 Sync All</strong> on the Dashboard to load standings</div>
+        <div class="empty"><span class="emoji">🏆</span>Sync to load standings</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">🔥 Best Gameweek</div>
+      <div class="leaderboard-card" id="best-gw-card">
+        <div class="empty"><span class="emoji">🔥</span>Sync to load</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">❄️ Worst Gameweek</div>
+      <div class="leaderboard-card" id="worst-gw-card">
+        <div class="empty"><span class="emoji">❄️</span>Sync to load</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">🏅 Trophy Cabinet — GW Winners</div>
+      <div class="leaderboard-card" id="trophy-cabinet">
+        <div class="empty"><span class="emoji">🏅</span>Sync to load</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">💀 Hall of Shame — Worst Captains</div>
+      <div class="leaderboard-card" id="hall-of-shame">
+        <div class="empty"><span class="emoji">💀</span>Sync to load</div>
       </div>
     </section>
 
@@ -135,21 +187,37 @@
         <div class="empty"><span class="emoji">📅</span>Sync to see stats</div>
       </div>
     </section>
+
   </div>
 
-  <!-- ============ VIEW: HISTORY ============ -->
+  <!-- ==================== VIEW: HISTORY ==================== -->
   <div id="view-history" class="view" style="display:none">
+
     <section>
-      <div class="section-title">📈 My Season — Points per GW</div>
+      <div class="section-title">📈 Points per Gameweek</div>
       <div class="chart-card">
         <div id="chart-points" class="empty"><span class="emoji">📈</span>Sync to see your chart</div>
       </div>
     </section>
 
     <section>
-      <div class="section-title">🏅 My Overall Rank</div>
+      <div class="section-title">🏅 Overall Rank</div>
       <div class="chart-card">
         <div id="chart-rank" class="empty"><span class="emoji">🏅</span>Sync to see your rank progression</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">⚖️ You vs Average</div>
+      <div class="chart-card">
+        <div id="chart-average" class="empty"><span class="emoji">⚖️</span>Sync to compare</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">🃏 Chip Usage</div>
+      <div class="chart-card" id="chip-tracker">
+        <div class="empty"><span class="emoji">🃏</span>Sync to see chips</div>
       </div>
     </section>
 
@@ -171,9 +239,10 @@
         </table>
       </div>
     </section>
+
   </div>
 
-  <!-- ============ VIEW: PLAYERS ============ -->
+  <!-- ==================== VIEW: PLAYERS ==================== -->
   <div id="view-players" class="view" style="display:none">
     <section>
       <div class="section-title">🔍 Search Players</div>
@@ -202,12 +271,12 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v3 · Data saved in your browser · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
+  ⚡ FPL Command Center v4 · Data saved in your browser · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
 </footer>
 
 </div><!-- /app -->
 
-<!-- ============ MODALS ============ -->
+<!-- ==================== MODALS ==================== -->
 
 <div class="modal-overlay" id="player-modal">
   <div class="modal">
@@ -289,8 +358,8 @@
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Your data lives on your device.</strong> Use <em>Export</em> to back it up.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">2. Everyone has their own workspace.</strong> Pick your name on the welcome screen.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load your squad, all family members' squads, and the player database — all automatically through our proxy.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Auto-refreshes</strong> every 30 minutes.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load your squad, all family members, and the player database — automatically via the Cloudflare worker.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. Full Roast Mode is ON.</strong> Best/Worst GW rankings, weekly roasts, Hall of Shame, Trophy Cabinet — all live.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
