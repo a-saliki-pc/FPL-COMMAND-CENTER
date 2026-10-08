@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0"/>
+<meta name="theme-color" content="#0d0221"/>
+<meta name="description" content="FPL Command Center — plan your Fantasy Premier League season with your family mini-league."/>
+<title>⚡ FPL Command Center</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+</head>
+<body>
+
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+
+<!-- ============ WELCOME / LOGIN SCREEN ============ -->
+<div id="welcome" class="welcome">
+  <div class="welcome-card">
+    <div class="welcome-logo">⚡</div>
+    <h1>FPL Command Center</h1>
+    <p class="welcome-sub">Your personal Fantasy Premier League season planner. Enter your Team ID to start — everything saves in <strong>your browser only</strong>.</p>
+
+    <div class="welcome-field">
+      <label for="welcome-team-id">Your FPL Team ID</label>
+      <input type="number" id="welcome-team-id" placeholder="e.g. 1115676" inputmode="numeric">
+      <small>Find it in your FPL URL: fantasy.premierleague.com/entry/<strong>1234567</strong>/event/1</small>
+    </div>
+
+    <div class="welcome-field">
+      <label for="welcome-name">Your name (optional)</label>
+      <input type="text" id="welcome-name" placeholder="e.g. Adyb" autocomplete="off">
+    </div>
+
+    <button class="btn primary big" onclick="startApp()">🚀 Open My Planner</button>
+
+    <div class="welcome-links">
+      <a href="#" onclick="showHelp();return false;">❓ How does this work?</a>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MAIN APP ============ -->
+<div id="app" style="display:none">
+
+<header>
+  <div class="header-inner">
+    <div class="logo"><span>⚡</span> FPL COMMAND CENTER</div>
+    <div class="header-stats">
+      <div class="header-stat"><div class="label">Manager</div><div class="value" id="hdr-manager">—</div></div>
+      <div class="header-stat"><div class="label">Team ID</div><div class="value" id="hdr-teamid">—</div></div>
+      <div class="header-stat"><div class="label">Bank</div><div class="value" id="hdr-bank">£0.0</div></div>
+      <div class="header-stat"><div class="label">Squad Value</div><div class="value" id="hdr-value">£0.0</div></div>
+      <div class="header-stat"><div class="label">Free Transfers</div><div class="value" id="hdr-ft">1</div></div>
+      <button class="btn small" onclick="logout()" title="Switch team">⇄</button>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- IMPORT -->
+  <section>
+    <div class="section-title">📥 Get Your Squad In</div>
+    <div class="tabs">
+      <div class="tab active" data-tab="help" onclick="switchTab('help', this)">❓ How to grab your data</div>
+      <div class="tab" data-tab="paste" onclick="switchTab('paste', this)">📋 Paste JSON</div>
+      <div class="tab" data-tab="file" onclick="switchTab('file', this)">📁 Drop File</div>
+    </div>
+
+    <div id="tab-help" class="tab-content">
+      <div class="step"><div class="num">1</div><div class="content">Open <a id="help-link" href="#" target="_blank" style="color:var(--cyan)">your FPL Points page</a> in a new tab.</div></div>
+      <div class="step"><div class="num">2</div><div class="content">Press <code>F12</code> to open DevTools, then click the <strong>Console</strong> tab.</div></div>
+      <div class="step"><div class="num">3</div><div class="content">Paste this one-liner and press Enter (if Chrome blocks, type <code>allow pasting</code> first):
+        <div class="code-snippet" id="console-snippet"></div>
+        <button class="btn small copy-btn" onclick="copySnippet()">📋 Copy snippet</button>
+      </div></div>
+      <div class="step"><div class="num">4</div><div class="content">A file <code>fpl-squad-gwX.json</code> downloads. Drag it into the <strong>Drop File</strong> tab.</div></div>
+      <div class="step"><div class="num">💡</div><div class="content">This bypasses CORS by running from FPL's own site — no server, no proxy, no hassle.</div></div>
+    </div>
+
+    <div id="tab-paste" class="tab-content" style="display:none">
+      <div class="field">
+        <label>Paste your FPL JSON here</label>
+        <textarea id="paste-area" placeholder='{"picks":[...],"entry_history":{...},"bootstrap":{...}}'></textarea>
+      </div>
+      <div class="squad-controls">
+        <button class="btn primary" onclick="importFromPaste()">⚡ Load Squad</button>
+        <button class="btn" onclick="document.getElementById('paste-area').value=''">Clear</button>
+      </div>
+    </div>
+
+    <div id="tab-file" class="tab-content" style="display:none">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('json-file').click()">
+        <div class="icon">📁</div>
+        <div class="title">Drop your JSON file here</div>
+        <div class="hint">or click to browse · accepts .json</div>
+      </div>
+      <input type="file" id="json-file" accept=".json,application/json" style="display:none" onchange="importFromFile(event)">
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section>
+    <div class="section-title">📊 Overview</div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="label">Squad Size</div><div class="value" id="stat-size">0/15</div><div class="sub" id="stat-size-sub">Add players</div></div>
+      <div class="stat-card cyan"><div class="label">Gameweeks Planned</div><div class="value" id="stat-gws">0</div><div class="sub">of 38 gameweeks</div></div>
+      <div class="stat-card pink"><div class="label">Points Hits</div><div class="value" id="stat-hits">0</div><div class="sub" id="stat-hits-sub">No hits taken</div></div>
+      <div class="stat-card gold"><div class="label">Chips Used</div><div class="value" id="stat-chips">0/4</div><div class="sub">WC · BB · TC · FH</div></div>
+    </div>
+  </section>
+
+  <!-- SQUAD -->
+  <section>
+    <div class="section-title">👥 My Squad <span class="hint-inline">(XI on top · bench below)</span></div>
+    <div class="squad-controls">
+      <button class="btn primary" onclick="openPlayerModal()">＋ Add Player</button>
+      <button class="btn" onclick="openBudgetModal()">💰 Set Budget & Bank</button>
+      <button class="btn" onclick="openFTModal()">🔄 Set FT</button>
+      <button class="btn" onclick="exportData()">⬇ Export</button>
+      <button class="btn" onclick="document.getElementById('import-plan-file').click()">⬆ Import</button>
+      <button class="btn danger" onclick="resetAll()">🗑 Reset</button>
+      <input type="file" id="import-plan-file" accept=".json" style="display:none" onchange="importPlanFile(event)">
+    </div>
+    <div class="squad-grid" id="squad-grid"></div>
+  </section>
+
+  <!-- TIMELINE -->
+  <section>
+    <div class="section-title">🗓 Season Timeline</div>
+    <div class="timeline-wrap"><div class="timeline" id="timeline"></div></div>
+  </section>
+
+  <!-- PLANS -->
+  <section>
+    <div class="section-title">🔄 Transfer Plans</div>
+    <div class="squad-controls">
+      <button class="btn primary" onclick="openPlanModal()">＋ Add Gameweek Plan</button>
+    </div>
+    <div class="plans-list" id="plans-list"></div>
+  </section>
+
+</main>
+
+<footer>
+  ⚡ FPL Command Center · Data saved only in <strong>your browser</strong> · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
+</footer>
+
+</div><!-- /app -->
+
+<!-- ============ MODALS ============ -->
+
+<div class="modal-overlay" id="player-modal">
+  <div class="modal">
+    <h3 id="player-modal-title">Add Player</h3>
+    <div class="field"><label>Player Name</label><input type="text" id="p-name" placeholder="e.g. Mohamed Salah"></div>
+    <div class="field-row">
+      <div class="field"><label>Position</label><select id="p-pos"><option value="GK">GK</option><option value="DEF">DEF</option><option value="MID" selected>MID</option><option value="FWD">FWD</option></select></div>
+      <div class="field"><label>Price (£m)</label><input type="number" id="p-price" step="0.1" min="3.5" max="20"></div>
+    </div>
+    <div class="field"><label>Team (optional)</label><input type="text" id="p-team" placeholder="e.g. LIV"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('player-modal')">Cancel</button>
+      <button class="btn primary" onclick="savePlayer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="budget-modal">
+  <div class="modal">
+    <h3>Set Budget & Bank</h3>
+    <div class="field"><label>Total Budget (£m)</label><input type="number" id="b-budget" step="0.1" min="0"></div>
+    <div class="field"><label>Bank Available (£m)</label><input type="number" id="b-bank" step="0.1" min="0"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('budget-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveBudget()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ft-modal">
+  <div class="modal">
+    <h3>Set Free Transfers</h3>
+    <div class="field"><label>Free Transfers Available</label><input type="number" id="ft-value" step="1" min="0" max="5"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('ft-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveFT()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="plan-modal">
+  <div class="modal">
+    <h3 id="plan-modal-title">Add Transfer Plan</h3>
+    <div class="field"><label>Gameweek</label><input type="number" id="pl-gw" min="1" max="38" value="1"></div>
+    <div class="field-row">
+      <div class="field"><label>OUT — Player</label><input type="text" id="pl-out" placeholder="Player out"></div>
+      <div class="field"><label>OUT — Price</label><input type="number" id="pl-out-price" step="0.1"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>IN — Player</label><input type="text" id="pl-in" placeholder="Player in"></div>
+      <div class="field"><label>IN — Price</label><input type="number" id="pl-in-price" step="0.1"></div>
+    </div>
+    <div class="field"><label>Chip (optional)</label><select id="pl-chip"><option value="">None</option><option value="WC">🃏 Wildcard</option><option value="BB">🎲 Bench Boost</option><option value="TC">⚡ Triple Captain</option><option value="FH">🏠 Free Hit</option></select></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('plan-modal')">Cancel</button>
+      <button class="btn primary" onclick="savePlan()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="help-modal">
+  <div class="modal">
+    <h3>❓ How it works</h3>
+    <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
+      <p><strong style="color:var(--text)">1. Your data lives only on your device.</strong> Nothing is sent to a server. If you clear your browser, you lose your plan — use <em>Export</em> to back up.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">2. Everyone shares the same URL but has their own squad.</strong> Your family can open the site on their phone/laptop and enter their own Team ID. Your plans never mix.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Grabbing your squad is a two-tab trick.</strong> Open FPL, run a one-liner in the console, drop the JSON file into the tool. The console snippet is provided on the main page.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. Why the trick?</strong> Browsers block direct API calls to FPL from other sites (CORS). Running the fetch from FPL's own site bypasses this cleanly — no server, no proxy, no cost.</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
