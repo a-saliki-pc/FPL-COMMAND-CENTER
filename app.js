@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v4.5 — app.js
-   Fixtures + Enhanced Plan Modal
+   FPL Command Center v5 — app.js
+   Season Planner Edition
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -32,6 +32,8 @@ const SHAME_EMOJI = (pts) => {
 };
 const CHIP_EMOJI = { wildcard: '🃏', bboost: '🎲', '3xc': '⚡', freehit: '🏠' };
 const CHIP_NAME = { wildcard: 'Wildcard', bboost: 'Bench Boost', '3xc': 'Triple Captain', freehit: 'Free Hit' };
+const CHIP_EMOJI_SHORT = { WC: '🃏', BB: '🎲', TC: '⚡', FH: '🏠' };
+const CHIP_NAME_SHORT = { WC: 'Wildcard', BB: 'Bench Boost', TC: 'Triple Captain', FH: 'Free Hit' };
 const MOOD_EMOJI = { hot: '🔥', climbing: '📈', steady: '➡️', slipping: '📉', dead: '💀' };
 
 const ROAST_BEST = [
@@ -75,8 +77,11 @@ let pickedId = null;
 let liveDataCache = {};
 let captainHistoryCache = null;
 let fixturesCache = {};
+let gwResultCache = {};   // { gw: { points, rank, transfers, chip, captainName } }
+let openAccordions = {};  // { gw: true/false }
 
-function storageKey(id) { return `fpl-cc-v4:${id}`; }
+function storageKey(id) { return `fpl-cc-v5:${id}`; }
+function oldStorageKey(id) { return `fpl-cc-v4:${id}`; }
 function emptyState() {
   return {
     players: [], plans: [], budget: 100, bank: 0, freeTransfers: 1,
@@ -87,7 +92,15 @@ function emptyState() {
 }
 function loadFor(id) {
   try {
-    const raw = localStorage.getItem(storageKey(id));
+    let raw = localStorage.getItem(storageKey(id));
+    // Migrate from v4 if first time
+    if (!raw) {
+      raw = localStorage.getItem(oldStorageKey(id));
+      if (raw) {
+        localStorage.setItem(storageKey(id), raw);
+        console.log('Migrated from v4 storage');
+      }
+    }
     if (raw) return { ...emptyState(), ...JSON.parse(raw) };
   } catch (e) { console.warn(e); }
   return emptyState();
@@ -164,6 +177,12 @@ function playerImgUrl(el) {
   const ext = el.photo.replace(/^\D+/, '').replace('.jpg', '');
   return `${IMG_BASE}/${ext}.png`;
 }
+function getTeamInfo(teamIdNum) {
+  if (!state.bootstrap) return { name: '?', short: '?', badge: '' };
+  const t = state.bootstrap.teams.find(x => x.id === teamIdNum);
+  if (!t) return { name: '?', short: '?', badge: '' };
+  return { name: t.name, short: t.short_name, badge: `${BADGE_BASE}/${t.id}.svg` };
+}
 
 /* ========== LIVE DATA ========== */
 async function fetchLiveGW(gw) {
@@ -175,7 +194,6 @@ async function fetchLiveGW(gw) {
     liveDataCache[gw] = map;
     return map;
   } catch (e) {
-    console.warn('Live fetch failed for GW' + gw, e);
     liveDataCache[gw] = {};
     return {};
   }
@@ -189,43 +207,19 @@ async function fetchFixturesForGW(gw) {
     fixturesCache[gw] = data || [];
     return fixturesCache[gw];
   } catch (e) {
-    console.warn('Fixtures fetch failed for GW' + gw, e);
     fixturesCache[gw] = [];
     return [];
   }
 }
-
-function getTeamInfo(teamIdNum) {
-  if (!state.bootstrap) return { name: '?', short: '?', badge: '' };
-  const t = state.bootstrap.teams.find(x => x.id === teamIdNum);
-  if (!t) return { name: '?', short: '?', badge: '' };
-  return {
-    name: t.name,
-    short: t.short_name,
-    badge: `${BADGE_BASE}/${t.id}.svg`,
-  };
-}
-
 function formatFixtureDay(iso) {
   if (!iso) return 'Date TBC';
   const d = new Date(iso);
-  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
 }
-
-function formatFixtureTime(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const h = String(d.getHours()).padStart(2, '0');
-  const m = String(d.getMinutes()).padStart(2, '0');
-  return `${h}:${m}`;
-}
-
-// Which of my players are involved in this GW's matches?
 function myPlayersInFixtures(fixtures) {
   if (!state.players || !state.players.length) return [];
-  const myTeams = new Set(state.players.map(p => p.teamId));
   const involved = [];
   state.players.forEach(p => {
     const fix = fixtures.find(f => f.team_h === p.teamId || f.team_a === p.teamId);
@@ -234,24 +228,15 @@ function myPlayersInFixtures(fixtures) {
     const opp = isHome ? fix.team_a : fix.team_h;
     const diff = isHome ? fix.team_h_difficulty : fix.team_a_difficulty;
     involved.push({
-      player: p.name,
-      pos: p.pos,
-      team: p.team,
-      teamId: p.teamId,
-      opp: getTeamInfo(opp),
-      home: isHome,
-      difficulty: diff || 3,
+      player: p.name, pos: p.pos, team: p.team, teamId: p.teamId,
+      opp: getTeamInfo(opp), home: isHome, difficulty: diff || 3,
     });
   });
   return involved;
 }
-
-// Sort fixtures by kickoff time
 function sortFixtures(list) {
   return [...list].sort((a, b) => new Date(a.kickoff_time || 0) - new Date(b.kickoff_time || 0));
 }
-
-// Group fixtures by day label
 function groupFixturesByDay(fixtures) {
   const groups = {};
   fixtures.forEach(f => {
@@ -260,6 +245,55 @@ function groupFixturesByDay(fixtures) {
     groups[day].push(f);
   });
   return groups;
+}
+
+/* ========== GW STATUS ========== */
+function getGWStatus(gw) {
+  const current = state.currentGW || 1;
+  if (gw < current) return 'past';
+  if (gw === current) return 'current';
+  return 'upcoming';
+}
+function isGWPlayed(gw) {
+  const ev = state.bootstrap?.events?.find(e => e.id === gw);
+  return ev ? ev.finished === true : false;
+}
+
+/* ========== GW RESULT (from FPL) ========== */
+async function fetchGWResult(gw) {
+  if (gwResultCache[gw]) return gwResultCache[gw];
+
+  const mine = state.familyData?.find(f => f.id === teamId);
+  const hist = mine?.history?.current?.find(g => g.event === gw);
+  if (!hist) return null;
+
+  // Try to fetch picks for that GW to get captain
+  let captain = '?';
+  let chip = hist.active_chip || null;
+
+  try {
+    const picks = await fpl(`/entry/${teamId}/event/${gw}/picks/`).catch(() => null);
+    if (picks && picks.picks) {
+      const cap = picks.picks.find(p => p.is_captain);
+      if (cap) {
+        const el2 = state.bootstrap?.elements?.find(x => x.id === cap.element);
+        if (el2) captain = el2.web_name;
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  const result = {
+    points: hist.points || 0,
+    rank: hist.overall_rank || 0,
+    transfers: hist.event_transfers || 0,
+    transferCost: hist.event_transfers_cost || 0,
+    bank: (hist.bank || 0) / 10,
+    value: (hist.value || 0) / 10,
+    chip,
+    captain,
+  };
+  gwResultCache[gw] = result;
+  return result;
 }
 
 /* ========== SYNC ========== */
@@ -302,12 +336,13 @@ async function syncAll(showToast = true) {
 
     fetchPriceChanges(boot.elements);
 
-    // Reset caches on fresh sync
+    // Reset caches
     liveDataCache = {};
     captainHistoryCache = null;
     fixturesCache = {};
+    gwResultCache = {};
 
-    // Prefetch live data for current + next 4 GWs
+    // Prefetch live + fixtures for current + next 4
     const prefetchGws = [];
     for (let i = 0; i < 5; i++) {
       const gw = currentGW + i;
@@ -318,16 +353,32 @@ async function syncAll(showToast = true) {
       ...prefetchGws.map(gw => fetchFixturesForGW(gw)),
     ]);
 
+    // Cleanup: archive plans older than current GW
+    archiveOldPlans();
+
     state.lastSync = Date.now();
     saveState();
     renderAll();
-    if (showToast) toast(`✅ Synced — GW${currentGW} loaded with fixtures`);
+    if (showToast) toast(`✅ Synced — GW${currentGW} loaded`);
   } catch (e) {
     console.error(e);
     if (showToast) toast('Sync failed: ' + e.message, true);
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync All from FPL'; }
   }
+}
+
+function archiveOldPlans() {
+  // Nothing to physically delete — plans for past GWs become read-only via getGWStatus.
+  // But we clean up plans that have no meaningful content for past GWs.
+  const current = state.currentGW || 1;
+  state.plans = state.plans.filter(p => {
+    // Keep if it's a future/current plan
+    if (p.gw >= current) return true;
+    // For past GWs, only keep if it had real content (transfer, captain, chip, note)
+    const hasContent = p.outName || p.inName || p.captain || p.chip || p.note;
+    return hasContent;
+  });
 }
 
 function fetchPriceChanges(elements) {
@@ -337,20 +388,12 @@ function fetchPriceChanges(elements) {
     .filter(e => e.cost_change_event > 0 || (e.transfers_in_event - e.transfers_out_event) > 50000)
     .sort((a, b) => (b.cost_change_event * 1e6 + (b.transfers_in_event - b.transfers_out_event)) - (a.cost_change_event * 1e6 + (a.transfers_in_event - a.transfers_out_event)))
     .slice(0, 5)
-    .map(e => ({
-      name: e.web_name, price: e.now_cost / 10,
-      change: e.cost_change_event / 10,
-      netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0),
-    }));
+    .map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
   const fallers = withData
     .filter(e => e.cost_change_event < 0 || (e.transfers_out_event - e.transfers_in_event) > 50000)
     .sort((a, b) => (a.cost_change_event * 1e6 + (a.transfers_out_event - a.transfers_in_event)) - (b.cost_change_event * 1e6 + (b.transfers_out_event - b.transfers_in_event)))
     .slice(0, 5)
-    .map(e => ({
-      name: e.web_name, price: e.now_cost / 10,
-      change: e.cost_change_event / 10,
-      netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0),
-    }));
+    .map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
   state.priceRisers = risers;
   state.priceFallers = fallers;
 }
@@ -359,32 +402,20 @@ function mergeMySquad(picksData) {
   const bp = state.bootstrap;
   const teamMap = {};
   bp.teams.forEach(t => teamMap[t.id] = t.short_name);
-
   state.players = picksData.picks.map(p => {
     const el = bp.elements.find(x => x.id === p.element);
     if (!el) return null;
     return {
       id: uid(), fplId: el.id,
-      name: el.web_name,
-      fullName: `${el.first_name} ${el.second_name}`,
-      pos: POS_MAP[el.element_type],
-      price: el.now_cost / 10,
-      team: teamMap[el.team] || '?',
-      teamId: el.team,
-      captain: p.is_captain,
-      vice: p.is_vice_captain,
-      multiplier: p.multiplier,
-      bench: p.position > 11,
-      order: p.position,
-      gwPoints: p.points || 0,
-      photo: playerImgUrl(el),
-      status: el.status,
-      news: el.news,
-      form: parseFloat(el.form) || 0,
-      totalPoints: el.total_points,
+      name: el.web_name, fullName: `${el.first_name} ${el.second_name}`,
+      pos: POS_MAP[el.element_type], price: el.now_cost / 10,
+      team: teamMap[el.team] || '?', teamId: el.team,
+      captain: p.is_captain, vice: p.is_vice_captain, multiplier: p.multiplier,
+      bench: p.position > 11, order: p.position, gwPoints: p.points || 0,
+      photo: playerImgUrl(el), status: el.status, news: el.news,
+      form: parseFloat(el.form) || 0, totalPoints: el.total_points,
     };
   }).filter(Boolean);
-
   const hist = picksData.entry_history;
   if (hist) {
     state.bank = (hist.bank || 0) / 10;
@@ -444,6 +475,7 @@ function switchView(name, el) {
   if (name === 'leaderboard') renderLeaderboard();
   if (name === 'history') renderHistory();
   if (name === 'players') renderPlayers();
+  if (name === 'planner') renderSeasonPlanner();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -484,7 +516,8 @@ function renderAll() {
   renderMiniLeaderboard();
   renderLeaderboard();
   renderTimeline();
-  renderPlans();
+  renderMiniPlans();
+  renderSeasonPlanner();
   renderHistory();
   renderPlayers();
 }
@@ -554,11 +587,7 @@ function renderCaptainSuggestion() {
     const ict = parseFloat(el2.ict_index) || 0;
     const minutes = el2.minutes || 0;
     const score = form * 3 + pts * 0.1 + ict * 0.05 + (minutes > 500 ? 5 : 0);
-    return {
-      name: p.name, team: p.team, pos: p.pos, price: p.price,
-      form, pts, score,
-      ownership: parseFloat(el2.selected_by_percent) || 0,
-    };
+    return { name: p.name, team: p.team, pos: p.pos, price: p.price, form, pts, score, ownership: parseFloat(el2.selected_by_percent) || 0 };
   }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 3);
 
   if (!candidates.length) { el.innerHTML = '<div class="empty">No candidates</div>'; return; }
@@ -593,10 +622,7 @@ function renderPriceChanges() {
         <div style="font-weight:800;font-size:0.75rem;color:var(--mint);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">📈 Rising</div>
         ${risers.map(r => `
           <div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
-            <div>
-              <div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div>
-              <div class="lb-teamname">${fmt(r.price)}</div>
-            </div>
+            <div><div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div><div class="lb-teamname">${fmt(r.price)}</div></div>
             <div class="lb-stat" style="color:var(--mint);font-size:0.8rem">${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}</div>
             <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
           </div>
@@ -606,10 +632,7 @@ function renderPriceChanges() {
         <div style="font-weight:800;font-size:0.75rem;color:var(--red);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">📉 Falling</div>
         ${fallers.map(r => `
           <div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
-            <div>
-              <div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div>
-              <div class="lb-teamname">${fmt(r.price)}</div>
-            </div>
+            <div><div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div><div class="lb-teamname">${fmt(r.price)}</div></div>
             <div class="lb-stat" style="color:var(--red);font-size:0.8rem">${r.change.toFixed(1)}</div>
             <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
           </div>
@@ -635,17 +658,14 @@ function renderSquad() {
   const elementsMap = {};
   if (bp) bp.elements.forEach(e => elementsMap[e.id] = e);
 
-  const bestCap = [...state.players]
-    .filter(p => !p.bench)
+  const bestCap = [...state.players].filter(p => !p.bench)
     .map(p => {
       const el2 = elementsMap[p.fplId];
       const form = el2 ? parseFloat(el2.form) || 0 : 0;
       return { ...p, score: form };
-    })
-    .sort((a, b) => b.score - a.score)[0];
+    }).sort((a, b) => b.score - a.score)[0];
 
   grid.innerHTML = sorted.map(p => {
-    const el2 = elementsMap[p.fplId];
     const isRecommendedCap = bestCap && p.id === bestCap.id;
     const teamBadge = p.teamId ? `${BADGE_BASE}/${p.teamId}.svg` : '';
     const injury = p.status && p.status !== 'a';
@@ -655,17 +675,8 @@ function renderSquad() {
         ${p.vice ? '<div class="vc-badge">V</div>' : ''}
         ${injury ? '<div class="injury-warn" title="' + escapeHtml(p.news || 'Injury doubt') + '">⚠️</div>' : ''}
         ${p.photo ? `<img class="player-headshot" src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
-        <div class="name">
-          <span>${escapeHtml(p.name)}</span>
-          <span class="pos-badge" data-pos="${p.pos}">${p.pos}</span>
-        </div>
-        <div class="meta">
-          <span class="price-tag">${fmt(p.price)}</span>
-          <span style="display:flex;align-items:center;gap:4px">
-            ${teamBadge ? `<img src="${teamBadge}" style="width:14px;height:14px" onerror="this.style.display='none'">` : ''}
-            ${escapeHtml(p.team)}
-          </span>
-        </div>
+        <div class="name"><span>${escapeHtml(p.name)}</span><span class="pos-badge" data-pos="${p.pos}">${p.pos}</span></div>
+        <div class="meta"><span class="price-tag">${fmt(p.price)}</span><span style="display:flex;align-items:center;gap:4px">${teamBadge ? `<img src="${teamBadge}" style="width:14px;height:14px" onerror="this.style.display='none'">` : ''}${escapeHtml(p.team)}</span></div>
         <div class="player-stats">
           <div class="player-stat"><div class="stat-val">${p.gwPoints || 0}</div><div class="stat-lbl">GW</div></div>
           <div class="player-stat"><div class="stat-val">${p.totalPoints || 0}</div><div class="stat-lbl">Total</div></div>
@@ -688,93 +699,304 @@ function renderTimeline() {
     planMap[p.gw].count++;
     if (p.chip) planMap[p.gw].chip = p.chip;
   });
-  const chips = { WC: '🃏', BB: '🎲', TC: '⚡', FH: '🏠' };
   let html = '';
   for (let gw = 1; gw <= 38; gw++) {
     const plan = planMap[gw];
+    const status = getGWStatus(gw);
     const cls = ['gw-chip'];
     if (plan) cls.push('has-plan');
     if (plan && plan.chip) cls.push('has-chip');
-    if (state.currentGW === gw) cls.push('current');
+    if (status === 'current') cls.push('current');
+    if (status === 'past') cls.push('past');
     html += `<div class="${cls.join(' ')}" onclick="openPlanModal(null, ${gw})">
-      ${plan && plan.chip ? '<div class="chip-icon">' + chips[plan.chip] + '</div>' : ''}
+      ${plan && plan.chip ? '<div class="chip-icon">' + CHIP_EMOJI_SHORT[plan.chip] + '</div>' : ''}
       <div class="gw-num">GW${gw}</div>
-      <div class="gw-plan">${plan ? plan.count + ' plan' + (plan.count>1?'s':'') : '—'}</div>
+      <div class="gw-plan">${status === 'past' ? '✅' : plan ? plan.count + ' plan' + (plan.count>1?'s':'') : '—'}</div>
     </div>`;
   }
   t.innerHTML = html;
 }
 
-/* ========== PLANS ========== */
-function renderPlans() {
-  const list = document.getElementById('plans-list');
-  if (!list) return;
-  if (state.plans.length === 0) {
-    list.innerHTML = '<div class="empty"><span class="emoji">🔄</span>No transfer plans yet — tap a gameweek above</div>';
+/* ========== MINI PLANNER (Dashboard) ========== */
+function renderMiniPlans() {
+  const el = document.getElementById('mini-plans');
+  if (!el) return;
+  if (!state.currentGW) {
+    el.innerHTML = '<div class="empty"><span class="emoji">🔄</span>Sync to load your planner</div>';
     return;
   }
-  const chips = { WC: '🃏 Wildcard', BB: '🎲 Bench Boost', TC: '⚡ Triple Captain', FH: '🏠 Free Hit' };
-  const sorted = [...state.plans].sort((a,b) => a.gw - b.gw);
-  list.innerHTML = sorted.map(p => {
-    const net = (Number(p.inPrice) || 0) - (Number(p.outPrice) || 0);
-    const netStr = net === 0 ? '£0.0m' : (net > 0 ? '+' : '') + fmt(net);
-    const hasTransfer = p.outName || p.inName;
+  // Show last current GW + next 2
+  const current = state.currentGW;
+  const gwsToShow = [current, current + 1, current + 2].filter(gw => gw <= 38);
 
-    // Fixtures summary
-    const fixtures = fixturesCache[p.gw] || [];
-    const myPlayers = myPlayersInFixtures(fixtures);
-
+  const html = gwsToShow.map(gw => {
+    const plan = state.plans.find(p => p.gw === gw);
+    const status = getGWStatus(gw);
+    const summary = buildGWSummary(plan, status);
+    const statusClass = status;
+    const statusLabel = status === 'past' ? '✅ Done' : status === 'current' ? '🔥 Now' : '⏳ Next';
     return `
-      <div class="plan-card ${p.chip ? 'chip' : ''}">
-        <div class="plan-header">
-          <div class="gw-label">GW${p.gw}${p.chip ? ' · ' + chips[p.chip] : ''}</div>
-          <div class="plan-actions">
-            <button class="btn small" onclick="openPlanModal('${p.id}')">Edit</button>
-            <button class="btn small danger" onclick="removePlan('${p.id}')">Delete</button>
+      <div class="mini-plan-row ${statusClass}" onclick="openPlanModal('${plan?.id || ''}', ${gw})">
+        <div class="mini-plan-gw">GW${gw}</div>
+        <div class="mini-plan-info">${summary}</div>
+        <div class="mini-plan-status ${statusClass}">${statusLabel}</div>
+      </div>
+    `;
+  }).join('');
+
+  el.innerHTML = html;
+}
+
+function buildGWSummary(plan, status) {
+  const parts = [];
+  if (plan) {
+    if (plan.outName || plan.inName) parts.push(`<span class="mini-plan-tag transfer">⬆${escapeHtml(plan.outName || '?')} ⬇${escapeHtml(plan.inName || '?')}</span>`);
+    if (plan.captain) parts.push(`<span class="mini-plan-tag captain">👑 ${escapeHtml(plan.captain)}</span>`);
+    if (plan.chip) parts.push(`<span class="mini-plan-tag chip">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span>`);
+  }
+  if (!parts.length) return '<span style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan yet</span>';
+  return parts.join('');
+}
+
+/* ========== SEASON PLANNER (Full) ========== */
+function renderSeasonPlanner() {
+  const el = document.getElementById('season-planner');
+  const statusBar = document.getElementById('planner-status-bar');
+  if (!el) return;
+
+  if (!state.currentGW) {
+    el.innerHTML = '<div class="empty"><span class="emoji">🗓</span>Sync to load the season planner</div>';
+    return;
+  }
+
+  // Update status bar
+  const chipsUsed = (state.familyData?.find(f => f.id === teamId)?.history?.current || [])
+    .filter(g => g.active_chip).length || 0;
+  const totalChips = 4;
+  const plannedTransfers = state.plans.filter(p => (p.outName && p.inName) && p.gw >= state.currentGW).length;
+
+  document.getElementById('pl-status-bank').textContent = fmt(state.bank);
+  document.getElementById('pl-status-value').textContent = fmt(state.players.reduce((s, p) => s + p.price, 0));
+  document.getElementById('pl-status-chips').textContent = (totalChips - chipsUsed) + ' / ' + totalChips;
+  document.getElementById('pl-status-transfers').textContent = plannedTransfers;
+
+  const current = state.currentGW;
+
+  // Render all 38 GWs
+  let html = '';
+  for (let gw = 1; gw <= 38; gw++) {
+    const status = getGWStatus(gw);
+    const plan = state.plans.find(p => p.gw === gw);
+    const isOpen = openAccordions[gw] || false;
+
+    // Build summary pills
+    const summaryParts = buildGWSummary(plan, status);
+    const statusLabel = status === 'past' ? '✅ Done' : status === 'current' ? '🔥 This Week' : '⏳ Upcoming';
+    const result = gwResultCache[gw];
+    const pastSummary = status === 'past' && result ? `<span class="gw-acc-pill captain">${result.points} pts</span>` : '';
+
+    html += `
+      <div class="gw-accordion ${status} ${isOpen ? 'open' : ''}" data-gw="${gw}">
+        <div class="gw-accordion-header" onclick="toggleAccordion(${gw})">
+          <div class="gw-acc-gwnum">GW${gw}</div>
+          <div class="gw-acc-summary">
+            ${pastSummary}
+            ${summaryParts}
+            <span class="gw-acc-status ${status}">${statusLabel}</span>
+          </div>
+          <div class="gw-acc-chevron">▼</div>
+        </div>
+        <div class="gw-accordion-body">
+          <div class="gw-accordion-body-inner" id="gw-body-${gw}">
+            ${renderGWAccordionBody(gw, plan, status)}
           </div>
         </div>
+      </div>
+    `;
+  }
+  el.innerHTML = html;
 
+  // If any past GWs need result data, fetch them async
+  if (state.familyData) {
+    for (let gw = 1; gw < current; gw++) {
+      if (!gwResultCache[gw]) {
+        fetchGWResult(gw).then(r => {
+          if (r) updateGWPastSummary(gw, r);
+        });
+      }
+    }
+  }
+}
+
+async function updateGWPastSummary(gw, result) {
+  const el = document.querySelector(`.gw-accordion[data-gw="${gw}"] .gw-accordion-header`);
+  if (!el) return;
+  const summaryBox = el.querySelector('.gw-acc-summary');
+  if (!summaryBox) return;
+  // Remove old past summary if any
+  const existing = summaryBox.querySelector('.gw-acc-pill.captain.result');
+  if (existing) existing.remove();
+  // Insert new one
+  const newPill = document.createElement('span');
+  newPill.className = 'gw-acc-pill captain result';
+  newPill.innerHTML = `${result.points} pts`;
+  summaryBox.insertBefore(newPill, summaryBox.firstChild);
+
+  // Also re-render the body if it's open
+  if (openAccordions[gw]) {
+    const bodyEl = document.getElementById(`gw-body-${gw}`);
+    if (bodyEl) {
+      const plan = state.plans.find(p => p.gw === gw);
+      bodyEl.innerHTML = renderGWAccordionBody(gw, plan, 'past');
+    }
+  }
+}
+
+function renderGWAccordionBody(gw, plan, status) {
+  const current = state.currentGW;
+  const isPast = status === 'past';
+  const result = gwResultCache[gw];
+
+  // Predicted vs Actual for past GWs
+  if (isPast) {
+    return renderPastGWBody(gw, plan, result);
+  }
+
+  // For current/upcoming — full plan editor
+  const fixtures = fixturesCache[gw] || [];
+  const myPlayers = myPlayersInFixtures(fixtures);
+
+  let planHtml = '';
+  if (plan && (plan.outName || plan.inName || plan.captain || plan.chip || plan.note)) {
+    const net = (Number(plan.inPrice) || 0) - (Number(plan.outPrice) || 0);
+    const netStr = net === 0 ? '£0.0m' : (net > 0 ? '+' : '') + fmt(net);
+    const hasTransfer = plan.outName || plan.inName;
+
+    planHtml = `
+      <div class="gw-plan-content">
         ${hasTransfer ? `
           <div class="plan-body">
             <div class="transfer-side out">
               <div class="side-label">⬆ Out</div>
-              <div class="transfer-player">${escapeHtml(p.outName || '—')}</div>
-              <div class="transfer-price">${fmt(p.outPrice)}</div>
+              <div class="transfer-player">${escapeHtml(plan.outName || '—')}</div>
+              <div class="transfer-price">${fmt(plan.outPrice)}</div>
             </div>
             <div class="transfer-side in">
               <div class="side-label">⬇ In</div>
-              <div class="transfer-player">${escapeHtml(p.inName || '—')}</div>
-              <div class="transfer-price">${fmt(p.inPrice)}</div>
+              <div class="transfer-player">${escapeHtml(plan.inName || '—')}</div>
+              <div class="transfer-price">${fmt(plan.inPrice)}</div>
             </div>
           </div>
         ` : ''}
 
         <div class="plan-extras">
-          ${p.captain ? `<div class="plan-extra"><span class="extra-label">👑 Captain</span><span class="extra-value">${escapeHtml(p.captain)}</span></div>` : ''}
-          ${p.vice ? `<div class="plan-extra"><span class="extra-label">🎗️ Vice</span><span class="extra-value">${escapeHtml(p.vice)}</span></div>` : ''}
-          ${p.ftAfter !== null && p.ftAfter !== undefined && p.ftAfter !== '' ? `<div class="plan-extra"><span class="extra-label">🔄 FT after</span><span class="extra-value">${p.ftAfter}</span></div>` : ''}
+          ${plan.captain ? `<div class="plan-extra"><span class="extra-label">👑 Captain</span><span class="extra-value">${escapeHtml(plan.captain)}</span></div>` : ''}
+          ${plan.vice ? `<div class="plan-extra"><span class="extra-label">🎗️ Vice</span><span class="extra-value">${escapeHtml(plan.vice)}</span></div>` : ''}
+          ${plan.chip ? `<div class="plan-extra"><span class="extra-label">Chip</span><span class="extra-value">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span></div>` : ''}
+          ${plan.ftAfter !== null && plan.ftAfter !== undefined && plan.ftAfter !== '' ? `<div class="plan-extra"><span class="extra-label">🔄 FT after</span><span class="extra-value">${plan.ftAfter}</span></div>` : ''}
         </div>
 
-        ${p.note ? `<div class="plan-note">📝 ${escapeHtml(p.note)}</div>` : ''}
-
-        ${myPlayers.length > 0 ? `
-          <div class="plan-fixtures">
-            <div class="plan-fixtures-title">⚽ Your players this GW</div>
-            ${myPlayers.map(mp => `
-              <div class="plan-fixture-row">
-                <img src="${BADGE_BASE}/${mp.teamId}.svg" onerror="this.style.display='none'">
-                <span class="opp">${escapeHtml(mp.player)}</span>
-                <span style="color:var(--muted);font-size:0.72rem">${mp.home ? 'vs' : '@'} ${escapeHtml(mp.opp.short)}</span>
-                <span class="diff fixture-diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
-              </div>
-            `).join('')}
-          </div>
-        ` : ''}
+        ${plan.note ? `<div class="plan-note">📝 ${escapeHtml(plan.note)}</div>` : ''}
 
         ${hasTransfer ? `<div class="plan-footer"><span>Net cost: <strong>${netStr}</strong></span></div>` : ''}
       </div>
     `;
-  }).join('');
+  } else {
+    planHtml = `<div class="gw-empty-plan">No plan yet for GW${gw}. <br><button class="btn small primary" style="margin-top:10px" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button></div>`;
+  }
+
+  // Fixtures preview (compact)
+  let fixturesHtml = '';
+  if (myPlayers.length) {
+    fixturesHtml = `
+      <div class="plan-fixtures">
+        <div class="plan-fixtures-title">⚽ Your players this GW</div>
+        ${myPlayers.slice(0, 12).map(mp => `
+          <div class="plan-fixture-row">
+            <img src="${BADGE_BASE}/${mp.teamId}.svg" onerror="this.style.display='none'">
+            <span class="opp">${escapeHtml(mp.player)}</span>
+            <span style="color:var(--muted);font-size:0.72rem">${mp.home ? 'vs' : '@'} ${escapeHtml(mp.opp.short)}</span>
+            <span class="fixture-diff diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  const actionsHtml = `
+    <div class="gw-plan-actions">
+      ${plan ? `<button class="btn small" onclick="openPlanModal('${plan.id}')">✏️ Edit</button>` : ''}
+      ${plan ? `<button class="btn small danger" onclick="removePlan('${plan.id}')">🗑 Delete</button>` : ''}
+      ${!plan ? `<button class="btn small primary" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button>` : ''}
+    </div>
+  `;
+
+  return planHtml + fixturesHtml + actionsHtml;
+}
+
+function renderPastGWBody(gw, plan, result) {
+  const pred = plan ? `
+    <div class="gw-compare-col predicted">
+      <h5>📋 You Planned</h5>
+      ${plan.outName || plan.inName ? `<div class="gw-compare-line"><span class="label">Transfer</span><span class="value">⬆${escapeHtml(plan.outName || '?')} ⬇${escapeHtml(plan.inName || '?')}</span></div>` : ''}
+      ${plan.captain ? `<div class="gw-compare-line"><span class="label">Captain</span><span class="value">👑 ${escapeHtml(plan.captain)}</span></div>` : ''}
+      ${plan.vice ? `<div class="gw-compare-line"><span class="label">Vice</span><span class="value">🎗️ ${escapeHtml(plan.vice)}</span></div>` : ''}
+      ${plan.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span></div>` : ''}
+      ${plan.note ? `<div class="gw-compare-line"><span class="label">Note</span><span class="value" style="font-style:italic">${escapeHtml(plan.note)}</span></div>` : ''}
+      ${!plan.outName && !plan.inName && !plan.captain && !plan.chip ? '<div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded</div>' : ''}
+    </div>
+  ` : `
+    <div class="gw-compare-col predicted">
+      <h5>📋 You Planned</h5>
+      <div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded for GW${gw}</div>
+    </div>
+  `;
+
+  const actual = result ? `
+    <div class="gw-compare-col actual">
+      <h5>✅ Actual Result</h5>
+      <div class="gw-compare-line"><span class="label">Points</span><span class="value" style="color:var(--mint)">${result.points}</span></div>
+      <div class="gw-compare-line"><span class="label">Overall Rank</span><span class="value">${fmtRank(result.rank)}</span></div>
+      <div class="gw-compare-line"><span class="label">Captain</span><span class="value">👑 ${escapeHtml(result.captain)}</span></div>
+      <div class="gw-compare-line"><span class="label">Transfers</span><span class="value">${result.transfers}${result.transferCost ? ` (-${result.transferCost} pts)` : ''}</span></div>
+      ${result.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI[result.chip]} ${CHIP_NAME[result.chip]}</span></div>` : ''}
+      <div class="gw-compare-line"><span class="label">Bank</span><span class="value">${fmt(result.bank)}</span></div>
+      <div class="gw-compare-line"><span class="label">Value</span><span class="value">${fmt(result.value)}</span></div>
+    </div>
+  ` : `
+    <div class="gw-compare-col actual">
+      <h5>✅ Actual Result</h5>
+      <div style="color:var(--muted);font-size:0.75rem;font-style:italic">Loading...</div>
+    </div>
+  `;
+
+  return `<div class="gw-compare">${pred}${actual}</div>`;
+}
+
+function toggleAccordion(gw) {
+  openAccordions[gw] = !openAccordions[gw];
+  const el = document.querySelector(`.gw-accordion[data-gw="${gw}"]`);
+  if (el) el.classList.toggle('open', openAccordions[gw]);
+
+  // If opening a past GW and we don't have its result, fetch it
+  if (openAccordions[gw] && getGWStatus(gw) === 'past' && !gwResultCache[gw]) {
+    const bodyEl = document.getElementById(`gw-body-${gw}`);
+    if (bodyEl) bodyEl.innerHTML = renderPastGWBody(gw, state.plans.find(p => p.gw === gw), null);
+    fetchGWResult(gw).then(r => {
+      if (r && bodyEl) {
+        bodyEl.innerHTML = renderPastGWBody(gw, state.plans.find(p => p.gw === gw), r);
+      }
+    });
+  }
+}
+
+function expandAllPlans() {
+  for (let gw = 1; gw <= 38; gw++) openAccordions[gw] = true;
+  document.querySelectorAll('.gw-accordion').forEach(el => el.classList.add('open'));
+}
+function collapseAllPlans() {
+  openAccordions = {};
+  document.querySelectorAll('.gw-accordion').forEach(el => el.classList.remove('open'));
 }
 
 /* ========== MINI LEADERBOARD ========== */
@@ -788,12 +1010,7 @@ function renderMiniLeaderboard() {
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
     const latest = hist[hist.length - 1];
-    return {
-      id: m.id, name: m.name, emoji: m.emoji || '',
-      teamName: m.entry?.name || '',
-      totalPts: latest?.total_points || 0,
-      gwPts: latest?.points || 0,
-    };
+    return { id: m.id, name: m.name, emoji: m.emoji || '', teamName: m.entry?.name || '', totalPts: latest?.total_points || 0, gwPts: latest?.points || 0 };
   }).sort((a, b) => b.totalPts - a.totalPts);
 
   wrap.innerHTML = rows.map((r, i) => `
@@ -838,12 +1055,7 @@ function buildRoastLines() {
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
     const latest = hist[hist.length - 1];
-    return {
-      id: m.id, name: m.name, emoji: m.emoji,
-      teamName: m.entry?.name || '',
-      totalPts: latest?.total_points || 0,
-      gwPts: latest?.points || 0,
-    };
+    return { id: m.id, name: m.name, emoji: m.emoji, teamName: m.entry?.name || '', totalPts: latest?.total_points || 0, gwPts: latest?.points || 0 };
   }).sort((a, b) => b.totalPts - a.totalPts);
   if (!rows.length) return ['Sync to load data.'];
   const leader = rows[0];
@@ -1005,7 +1217,6 @@ function renderTrophyCabinet() {
   `).join('')}</div>`;
 }
 
-/* ========== CAPTAIN PICKS ========== */
 async function fetchAllCaptainPicks() {
   if (captainHistoryCache) return captainHistoryCache;
   const bp = state.bootstrap;
@@ -1020,9 +1231,7 @@ async function fetchAllCaptainPicks() {
 
   for (const m of FAMILY) {
     const seasonPicks = [];
-    const picksByGW = await Promise.all(
-      gwNums.map(gw => fpl(`/entry/${m.id}/event/${gw}/picks/`).catch(() => null))
-    );
+    const picksByGW = await Promise.all(gwNums.map(gw => fpl(`/entry/${m.id}/event/${gw}/picks/`).catch(() => null)));
     gwNums.forEach((gw, i) => {
       const picksData = picksByGW[i];
       if (!picksData || !picksData.picks) return;
@@ -1079,9 +1288,7 @@ async function renderCaptainPicks() {
   const bestList = [...perManager].sort((a, b) => b.best.points - a.best.points);
 
   const renderRow = (row, pick, type) => {
-    const emoji = type === 'worst'
-      ? SHAME_EMOJI(pick.points)
-      : (pick.points >= 20 ? '🚀' : pick.points >= 14 ? '🔥' : pick.points >= 10 ? '📈' : '👍');
+    const emoji = type === 'worst' ? SHAME_EMOJI(pick.points) : (pick.points >= 20 ? '🚀' : pick.points >= 14 ? '🔥' : pick.points >= 10 ? '📈' : '👍');
     const color = type === 'worst' ? 'var(--red)' : 'var(--gold)';
     return `
       <div class="shame-item">
@@ -1143,22 +1350,16 @@ function renderHistory() {
   }
 
   const maxPts = Math.max(...gws.map(g => g.points), 1);
-  chartPoints.innerHTML = `
-    <div class="chart-bars">
-      ${gws.map(g => `
-        <div class="chart-bar me" style="height:${(g.points / maxPts) * 180}px" title="GW${g.event}: ${g.points} pts">
-          <div class="bar-value">${g.points}</div>
-          <div class="bar-label">${g.event}</div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  chartPoints.innerHTML = `<div class="chart-bars">${gws.map(g => `
+    <div class="chart-bar me" style="height:${(g.points / maxPts) * 180}px" title="GW${g.event}: ${g.points} pts">
+      <div class="bar-value">${g.points}</div>
+      <div class="bar-label">${g.event}</div>
+    </div>`).join('')}</div>`;
 
   const ranks = gws.map(g => g.overall_rank).filter(r => r > 0);
   if (ranks.length > 1) {
-    const minRank = Math.min(...ranks);
-    const maxRank = Math.max(...ranks);
-    const w = 900; const h = 200;
+    const minRank = Math.min(...ranks), maxRank = Math.max(...ranks);
+    const w = 900, h = 200;
     const step = w / (ranks.length - 1);
     const points = ranks.map((r, i) => {
       const x = i * step;
@@ -1176,25 +1377,21 @@ function renderHistory() {
             return `<circle cx="${x}" cy="${y}" r="4" fill="#00ff87"><title>GW${gws[i].event}: #${r.toLocaleString()}</title></circle>`;
           }).join('')}
         </svg>
-      </div>
-    `;
+      </div>`;
   } else chartRank.innerHTML = '<div class="empty">Not enough data yet</div>';
 
   const maxBoth = Math.max(...gws.map(g => Math.max(g.points, g.average_entry_score || 0)), 1);
   chartAverage.innerHTML = `
-    <div class="chart-bars">
-      ${gws.map(g => `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-          <div style="display:flex;gap:2px;align-items:flex-end">
-            <div class="chart-bar me" style="height:${(g.points / maxBoth) * 140}px;width:18px" title="You: ${g.points}"></div>
-            <div class="chart-bar avg" style="height:${((g.average_entry_score || 0) / maxBoth) * 140}px;width:18px" title="Avg: ${g.average_entry_score || 0}"></div>
-          </div>
-          <div class="bar-label">${g.event}</div>
+    <div class="chart-bars">${gws.map(g => `
+      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+        <div style="display:flex;gap:2px;align-items:flex-end">
+          <div class="chart-bar me" style="height:${(g.points / maxBoth) * 140}px;width:18px" title="You: ${g.points}"></div>
+          <div class="chart-bar avg" style="height:${((g.average_entry_score || 0) / maxBoth) * 140}px;width:18px" title="Avg: ${g.average_entry_score || 0}"></div>
         </div>
-      `).join('')}
+        <div class="bar-label">${g.event}</div>
+      </div>`).join('')}
     </div>
-    <div style="display:flex;gap:16px;justify-content:center;font-size:0.7rem;color:var(--muted);padding-top:8px"><span>🟢 You</span><span>🟣 Average</span></div>
-  `;
+    <div style="display:flex;gap:16px;justify-content:center;font-size:0.7rem;color:var(--muted);padding-top:8px"><span>🟢 You</span><span>🟣 Average</span></div>`;
 
   const usedChips = {};
   gws.forEach(g => { if (g.active_chip) usedChips[g.active_chip] = g.event; });
@@ -1372,38 +1569,72 @@ function openPlanModal(id = null, gw = null) {
   const viceEl = document.getElementById('pl-vice');
   const noteEl = document.getElementById('pl-note');
   const ftEl = document.getElementById('pl-ft-after');
+  const delBtn = document.getElementById('pl-delete-btn');
 
-  // Populate captain datalist
+  // Captain datalist
   const dl = document.getElementById('captain-options');
   if (dl && state.players) {
-    dl.innerHTML = state.players
-      .filter(p => !p.bench)
-      .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${p.pos}</option>`)
-      .join('');
+    dl.innerHTML = state.players.filter(p => !p.bench)
+      .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${p.pos}</option>`).join('');
   }
 
   if (id) {
     const p = state.plans.find(x => x.id === id);
-    title.textContent = 'Edit Plan';
-    gwEl.value = p.gw; outEl.value = p.outName || ''; outPEl.value = p.outPrice || '';
-    inEl.value = p.inName || ''; inPEl.value = p.inPrice || ''; chipEl.value = p.chip || '';
-    capEl.value = p.captain || ''; viceEl.value = p.vice || '';
-    noteEl.value = p.note || ''; ftEl.value = p.ftAfter ?? '';
+    if (p) {
+      title.textContent = 'Edit Plan';
+      gwEl.value = p.gw; outEl.value = p.outName || ''; outPEl.value = p.outPrice || '';
+      inEl.value = p.inName || ''; inPEl.value = p.inPrice || ''; chipEl.value = p.chip || '';
+      capEl.value = p.captain || ''; viceEl.value = p.vice || '';
+      noteEl.value = p.note || ''; ftEl.value = p.ftAfter ?? '';
+      delBtn.style.display = 'inline-flex';
+      // Lock if past GW
+      const isPast = getGWStatus(p.gw) === 'past';
+      gwEl.disabled = isPast;
+      outEl.disabled = isPast;
+      outPEl.disabled = isPast;
+      inEl.disabled = isPast;
+      inPEl.disabled = isPast;
+      chipEl.disabled = isPast;
+      capEl.disabled = isPast;
+      viceEl.disabled = isPast;
+      noteEl.disabled = isPast;
+      ftEl.disabled = isPast;
+      if (isPast) toast('Past GW — read-only', false);
+    }
   } else {
     title.textContent = 'Add Plan';
     gwEl.value = gw || state.currentGW || 1;
     outEl.value = ''; outPEl.value = ''; inEl.value = ''; inPEl.value = '';
     chipEl.value = ''; capEl.value = ''; viceEl.value = '';
     noteEl.value = ''; ftEl.value = '';
+    delBtn.style.display = 'none';
+    gwEl.disabled = false; outEl.disabled = false; outPEl.disabled = false;
+    inEl.disabled = false; inPEl.disabled = false; chipEl.disabled = false;
+    capEl.disabled = false; viceEl.disabled = false; noteEl.disabled = false;
+    ftEl.disabled = false;
   }
   document.getElementById('plan-modal').classList.add('active');
 
-  // Load fixtures for that GW into preview
   const gwVal = parseInt(gwEl.value) || 1;
   renderPlanFixtures(gwVal);
 
-  // Re-render on GW change
-  gwEl.oninput = () => renderPlanFixtures(parseInt(gwEl.value) || 1);
+  gwEl.oninput = () => {
+    const v = parseInt(gwEl.value) || 1;
+    renderPlanFixtures(v);
+    const isPast = getGWStatus(v) === 'past';
+    gwEl.disabled = isPast;
+    outEl.disabled = isPast; outPEl.disabled = isPast;
+    inEl.disabled = isPast; inPEl.disabled = isPast;
+    chipEl.disabled = isPast; capEl.disabled = isPast;
+    viceEl.disabled = isPast; noteEl.disabled = isPast; ftEl.disabled = isPast;
+  };
+}
+
+function deletePlanFromModal() {
+  if (!editingPlanId) return;
+  if (!confirm('Delete this plan?')) return;
+  removePlan(editingPlanId);
+  closeModal('plan-modal');
 }
 
 async function renderPlanFixtures(gw) {
@@ -1425,29 +1656,18 @@ async function renderPlanFixtures(gw) {
   let html = `<div class="fixtures-header">📅 GW${gw} Matches</div>`;
 
   Object.entries(groups).forEach(([day, list]) => {
-    html += `<div class="fixture-day-group">`;
-    html += `<div class="fixture-day-label">${escapeHtml(day)}</div>`;
+    html += `<div class="fixture-day-group"><div class="fixture-day-label">${escapeHtml(day)}</div>`;
     list.forEach(f => {
       const home = getTeamInfo(f.team_h);
       const away = getTeamInfo(f.team_a);
       const isMine = myTeamIds.has(f.team_h) || myTeamIds.has(f.team_a);
       html += `
         <div class="fixture-row ${isMine ? 'mine' : ''}">
-          <div class="fixture-team">
-            <img src="${home.badge}" onerror="this.style.display='none'">
-            <span>${escapeHtml(home.short)}</span>
-          </div>
+          <div class="fixture-team"><img src="${home.badge}" onerror="this.style.display='none'"><span>${escapeHtml(home.short)}</span></div>
           <div class="fixture-vs">${f.finished ? `${f.team_h_score}-${f.team_a_score}` : 'vs'}</div>
-          <div class="fixture-team away">
-            <span>${escapeHtml(away.short)}</span>
-            <img src="${away.badge}" onerror="this.style.display='none'">
-          </div>
-          <div style="display:flex;gap:4px">
-            <span class="fixture-diff" data-diff="${f.team_h_difficulty}">${f.team_h_difficulty}</span>
-            <span class="fixture-diff" data-diff="${f.team_a_difficulty}">${f.team_a_difficulty}</span>
-          </div>
-        </div>
-      `;
+          <div class="fixture-team away"><span>${escapeHtml(away.short)}</span><img src="${away.badge}" onerror="this.style.display='none'"></div>
+          <div style="display:flex;gap:4px"><span class="fixture-diff" data-diff="${f.team_h_difficulty}">${f.team_h_difficulty}</span><span class="fixture-diff" data-diff="${f.team_a_difficulty}">${f.team_a_difficulty}</span></div>
+        </div>`;
     });
     html += `</div>`;
   });
@@ -1457,17 +1677,11 @@ async function renderPlanFixtures(gw) {
     myPlayers.forEach(mp => {
       html += `
         <div class="fixture-row mine">
-          <div class="fixture-team">
-            <span>${escapeHtml(mp.player)}</span>
-          </div>
+          <div class="fixture-team"><span>${escapeHtml(mp.player)}</span></div>
           <div class="fixture-vs">${mp.home ? 'vs' : '@'}</div>
-          <div class="fixture-team away">
-            <img src="${mp.opp.badge}" onerror="this.style.display='none'">
-            <span>${escapeHtml(mp.opp.short)}</span>
-          </div>
+          <div class="fixture-team away"><img src="${mp.opp.badge}" onerror="this.style.display='none'"><span>${escapeHtml(mp.opp.short)}</span></div>
           <span class="fixture-diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
-        </div>
-      `;
+        </div>`;
     });
   }
 
@@ -1488,6 +1702,11 @@ function savePlan() {
   const ftAfter = ftAfterRaw === '' ? null : parseInt(ftAfterRaw);
 
   if (!gw || gw < 1 || gw > 38) return toast('GW must be 1-38', true);
+
+  if (getGWStatus(gw) === 'past') {
+    return toast('Cannot plan for a past GW', true);
+  }
+
   const payload = { gw, outName, outPrice, inName, inPrice, chip, captain, vice, note, ftAfter };
 
   if (editingPlanId) {
@@ -1546,6 +1765,7 @@ window.addEventListener('DOMContentLoaded', () => {
   startCountdown();
 });
 
+// Expose functions globally
 window.syncAll = syncAll;
 window.toggleTheme = toggleTheme;
 window.switchView = switchView;
@@ -1563,9 +1783,14 @@ window.saveFT = saveFT;
 window.openPlanModal = openPlanModal;
 window.savePlan = savePlan;
 window.removePlan = removePlan;
+window.deletePlanFromModal = deletePlanFromModal;
 window.closeModal = closeModal;
 window.exportData = exportData;
 window.resetAll = resetAll;
 window.optimizeLineup = optimizeLineup;
 window.renderPlayers = renderPlayers;
 window.renderHistory = renderHistory;
+window.renderSeasonPlanner = renderSeasonPlanner;
+window.toggleAccordion = toggleAccordion;
+window.expandAllPlans = expandAllPlans;
+window.collapseAllPlans = collapseAllPlans;
