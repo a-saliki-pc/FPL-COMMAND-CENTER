@@ -67,12 +67,13 @@
 
   <div class="main-nav">
     <button class="main-tab active" data-view="dashboard" onclick="switchView('dashboard', this)"><span class="tab-emoji">📊</span> <span class="tab-text">Dashboard</span></button>
+    <button class="main-tab" data-view="planner" onclick="switchView('planner', this)"><span class="tab-emoji">🗓</span> <span class="tab-text">Season Planner</span></button>
     <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)"><span class="tab-emoji">🏆</span> <span class="tab-text">Family League</span></button>
     <button class="main-tab" data-view="history" onclick="switchView('history', this)"><span class="tab-emoji">📈</span> <span class="tab-text">My History</span></button>
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- DASHBOARD -->
+  <!-- ============ DASHBOARD ============ -->
   <div id="view-dashboard" class="view active">
 
     <section>
@@ -134,17 +135,44 @@
       <div class="timeline-wrap"><div class="timeline" id="timeline"></div></div>
     </section>
 
+    <!-- MINI PLANNER — last 3 GWs -->
     <section>
-      <div class="section-title">🔄 Transfer Plans</div>
-      <div class="squad-controls">
-        <button class="btn primary" onclick="openPlanModal()">＋ Add Gameweek Plan</button>
-      </div>
-      <div class="plans-list" id="plans-list"></div>
+      <div class="section-title">🔄 Transfer Plans <span class="hint-inline">(next 3 GWs · <a href="#" onclick="switchView('planner', document.querySelector('[data-view=planner]'));return false;" style="color:var(--mint)">open full planner →</a>)</span></div>
+      <div class="plans-list mini-plans" id="mini-plans"></div>
     </section>
 
   </div>
 
-  <!-- FAMILY LEAGUE -->
+  <!-- ============ SEASON PLANNER ============ -->
+  <div id="view-planner" class="view" style="display:none">
+
+    <section>
+      <div class="section-title">🗓 Full Season Planner</div>
+
+      <!-- Status bar -->
+      <div class="planner-status-bar" id="planner-status-bar">
+        <div class="status-pill"><span class="status-label">Bank</span><span class="status-value" id="pl-status-bank">—</span></div>
+        <div class="status-pill"><span class="status-label">Squad Value</span><span class="status-value" id="pl-status-value">—</span></div>
+        <div class="status-pill"><span class="status-label">Chips Remaining</span><span class="status-value" id="pl-status-chips">—</span></div>
+        <div class="status-pill"><span class="status-label">Planned Transfers</span><span class="status-value" id="pl-status-transfers">—</span></div>
+      </div>
+
+      <!-- Controls -->
+      <div class="planner-controls">
+        <button class="btn small" onclick="expandAllPlans()">⬇ Expand All</button>
+        <button class="btn small" onclick="collapseAllPlans()">⬆ Collapse All</button>
+        <button class="btn small" onclick="openPlanModal()">＋ New Plan</button>
+      </div>
+
+      <!-- The accordion list -->
+      <div class="season-planner" id="season-planner">
+        <div class="empty"><span class="emoji">🗓</span>Sync to load the season planner</div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- ============ FAMILY LEAGUE ============ -->
   <div id="view-leaderboard" class="view" style="display:none">
 
     <section>
@@ -209,7 +237,7 @@
 
   </div>
 
-  <!-- HISTORY -->
+  <!-- ============ HISTORY ============ -->
   <div id="view-history" class="view" style="display:none">
 
     <section>
@@ -252,7 +280,7 @@
 
   </div>
 
-  <!-- PLAYERS -->
+  <!-- ============ PLAYERS ============ -->
   <div id="view-players" class="view" style="display:none">
     <section>
       <div class="section-title">🔍 Search Players</div>
@@ -281,7 +309,7 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v4 · Data saved in your browser · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
+  ⚡ FPL Command Center v5 · Data saved in your browser · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
 </footer>
 
 </div>
@@ -332,7 +360,7 @@
   </div>
 </div>
 
-<!-- PLAN MODAL (updated with fixtures + captain) -->
+<!-- PLAN MODAL -->
 <div class="modal-overlay" id="plan-modal">
   <div class="modal">
     <h3 id="plan-modal-title">Add Transfer Plan</h3>
@@ -383,6 +411,7 @@
     <div id="pl-fixtures-preview" class="fixtures-preview"></div>
 
     <div class="modal-actions">
+      <button class="btn danger" onclick="deletePlanFromModal()" id="pl-delete-btn" style="display:none;margin-right:auto">🗑 Delete</button>
       <button class="btn" onclick="closeModal('plan-modal')">Cancel</button>
       <button class="btn primary" onclick="savePlan()">Save</button>
     </div>
@@ -396,7 +425,7 @@
       <p><strong style="color:var(--text)">1. Your data lives on your device.</strong> Use <em>Export</em> to back it up.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">2. Everyone has their own workspace.</strong> Pick your name on the welcome screen.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load everything automatically.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Plan each GW</strong> with transfers, captain, chip, notes, and see that GW's fixtures.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. Season Planner tab</strong> — see all 38 GWs with plans, captain, chip, and fixtures. Past GWs show predicted vs actual.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
