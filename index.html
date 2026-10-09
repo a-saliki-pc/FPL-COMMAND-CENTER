@@ -77,7 +77,7 @@
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- ============ DASHBOARD ============ -->
+  <!-- DASHBOARD -->
   <div id="view-dashboard" class="view active">
 
     <section>
@@ -159,10 +159,9 @@
 
   </div>
 
-  <!-- ============ MY TEAM (Pitch + Planning Mode) ============ -->
+  <!-- MY TEAM -->
   <div id="view-team" class="view" style="display:none">
 
-    <!-- Planning mode banner (only visible when in planning mode) -->
     <div id="planning-banner" class="planning-banner" style="display:none">
       <div class="planning-banner-inner">
         <div class="planning-title">🗓 Planning Mode — GW<span id="planning-gw">6</span></div>
@@ -193,7 +192,6 @@
       </div>
     </section>
 
-    <!-- Planned team comparison (only visible when a plan exists) -->
     <div id="plan-compare" style="display:none">
       <section>
         <div class="section-title">📋 Your Plan vs Current</div>
@@ -203,7 +201,7 @@
 
   </div>
 
-  <!-- ============ SEASON PLANNER ============ -->
+  <!-- SEASON PLANNER -->
   <div id="view-planner" class="view" style="display:none">
     <section>
       <div class="section-title">🗓 Full Season Planner</div>
@@ -224,7 +222,7 @@
     </section>
   </div>
 
-  <!-- ============ FAMILY LEAGUE ============ -->
+  <!-- FAMILY LEAGUE -->
   <div id="view-leaderboard" class="view" style="display:none">
     <section>
       <div class="section-title">🔥 Weekly Roast</div>
@@ -267,7 +265,7 @@
     </section>
   </div>
 
-  <!-- ============ HISTORY ============ -->
+  <!-- HISTORY -->
   <div id="view-history" class="view" style="display:none">
     <section><div class="section-title">📈 Points per Gameweek</div>
       <div class="chart-card"><div id="chart-points" class="empty"><span class="emoji">📈</span>Sync to see your chart</div></div>
@@ -291,7 +289,7 @@
     </section>
   </div>
 
-  <!-- ============ PLAYERS ============ -->
+  <!-- PLAYERS -->
   <div id="view-players" class="view" style="display:none">
     <section>
       <div class="section-title">🔍 Search Players</div>
@@ -318,14 +316,13 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v8 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v9 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
 
 <!-- ============ MODALS ============ -->
 
-<!-- PLAYER ACTION MODAL (for planning mode) -->
 <div class="modal-overlay" id="action-modal">
   <div class="modal action-modal">
     <h3 id="action-modal-title">Player Actions</h3>
@@ -336,7 +333,6 @@
   </div>
 </div>
 
-<!-- SWAP MODAL (pick who to swap with) -->
 <div class="modal-overlay" id="swap-modal">
   <div class="modal swap-modal">
     <h3 id="swap-modal-title">Swap Player</h3>
@@ -450,7 +446,6 @@
   </div>
 </div>
 
-<!-- PERFORMANCE MODAL -->
 <div class="modal-overlay" id="perf-modal">
   <div class="modal perf-modal">
     <div id="perf-modal-content"></div>
