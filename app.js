@@ -1,13 +1,12 @@
 /* =========================================================
-   FPL Command Center v7 — app.js
-   Pitch View Edition
+   FPL Command Center v8 — app.js
+   Planning Mode Edition
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
 const FPL_API = 'https://fantasy.premierleague.com/api';
 const IMG_BASE = 'https://resources.premierleague.com/premierleague/photos/players/110x140';
 const BADGE_BASE = 'https://resources.premierleague.com/premierleague25/badges';
-const KIT_BASE = 'https://fantasy.premierleague.com/dist/img/shirts/standard';
 
 const FAMILY = [
   { id: '1115676', name: 'Adyb Saliki',   emoji: '🧠' },
@@ -52,7 +51,15 @@ let gwResultCache = {};
 let openAccordions = {};
 let syncTimer = null;
 let isSyncing = false;
-let squadView = localStorage.getItem('fpl-cc-squad-view') || 'pitch'; // 'pitch' or 'list'
+let squadView = localStorage.getItem('fpl-cc-squad-view') || 'pitch';
+
+// Planning mode state
+let planningMode = false;
+let planningGW = null;
+let plannedTeam = null; // { starters: [playerIds], bench: [playerIds], captain: id, vice: id }
+let actionPlayerId = null;
+let swapTargetId = null;
+let swapIsBench = false;
 
 function storageKey(id) { return `fpl-cc-v6:${id}`; }
 function emptyState() {
@@ -61,6 +68,7 @@ function emptyState() {
     managerName: '', bootstrap: null, familyData: null,
     currentGW: null, nextGW: null, nextDeadline: null, lastSync: 0,
     priceRisers: [], priceFallers: [],
+    plannedTeams: {}, // { gw: { starters, bench, captain, vice } }
   };
 }
 function loadFor(id) {
@@ -80,6 +88,7 @@ function saveState() {
     currentGW: state.currentGW, nextGW: state.nextGW, nextDeadline: state.nextDeadline,
     lastSync: state.lastSync,
     priceRisers: state.priceRisers, priceFallers: state.priceFallers,
+    plannedTeams: state.plannedTeams || {},
   };
   try { localStorage.setItem(storageKey(teamId), JSON.stringify(toSave)); }
   catch (e) { toast('Storage full — export a backup', true); }
@@ -145,6 +154,7 @@ function toggleSquadView() {
   squadView = squadView === 'pitch' ? 'list' : 'pitch';
   localStorage.setItem('fpl-cc-squad-view', squadView);
   renderSquad();
+  renderTeamView();
   updateViewToggleButtons();
   toast(squadView === 'pitch' ? '⚽ Pitch view' : '📋 List view');
 }
@@ -434,6 +444,7 @@ function logout() {
   if (!confirm('Switch manager? Your data stays saved.')) return;
   saveState();
   teamId = null; state = null; pickedId = null;
+  planningMode = false; plannedTeam = null; planningGW = null;
   document.getElementById('app').style.display = 'none';
   document.getElementById('welcome').style.display = 'flex';
   document.getElementById('welcome-team-id').value = '';
@@ -527,6 +538,14 @@ function renderAll() {
   renderPlayers();
   updateSyncDot();
   updateViewToggleButtons();
+  updateTabBadges();
+}
+
+function updateTabBadges() {
+  const teamTab = document.querySelector('[data-view="team"]');
+  if (!teamTab) return;
+  const planned = state.plannedTeams?.[state.nextGW] || state.plannedTeams?.[state.currentGW];
+  teamTab.classList.toggle('has-plan', !!planned);
 }
 
 function renderHeader() {
@@ -668,12 +687,11 @@ function renderPlayerMarks(p) {
   return `<div class="player-marks">${marks.join('')}</div>`;
 }
 
-/* ========== SQUAD RENDERER (list or pitch based on squadView) ========== */
+/* ========== SQUAD RENDERER ========== */
 function renderSquad() {
   const grid = document.getElementById('squad-grid');
   const dashPitch = document.getElementById('pitch-view-dashboard');
   if (!grid || !dashPitch) return;
-
   if (squadView === 'list') {
     grid.style.display = 'grid';
     dashPitch.style.display = 'none';
@@ -681,7 +699,7 @@ function renderSquad() {
   } else {
     grid.style.display = 'none';
     dashPitch.style.display = 'block';
-    renderPitchView(dashPitch);
+    renderPitchView(dashPitch, false);
   }
 }
 
@@ -734,35 +752,54 @@ function getSortedPlayers() {
   return [...state.players].sort((a,b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || b.price - a.price);
 }
 
-function renderPitchView(container) {
+/* ========== PITCH VIEW (FACES) ========== */
+function renderPitchView(container, planning) {
   if (state.players.length === 0) {
     container.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
     return;
   }
 
-  const starters = state.players.filter(p => !p.bench);
-  const bench = state.players.filter(p => p.bench);
+  let starters, bench;
+
+  if (planning && plannedTeam) {
+    // Use planned team
+    const startersIds = plannedTeam.starters;
+    const benchIds = plannedTeam.bench;
+    starters = startersIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+    bench = benchIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+  } else {
+    // Use current team
+    starters = state.players.filter(p => !p.bench);
+    bench = state.players.filter(p => p.bench);
+  }
 
   const gk = starters.filter(p => p.pos === 'GK');
   const def = starters.filter(p => p.pos === 'DEF');
   const mid = starters.filter(p => p.pos === 'MID');
   const fwd = starters.filter(p => p.pos === 'FWD');
-
   const formation = `${def.length}-${mid.length}-${fwd.length}`;
 
-  const renderPlayerCard = (p, isBench = false) => {
+  const capId = planning && plannedTeam ? plannedTeam.captain : (state.players.find(p => p.captain)?.id);
+  const vcId = planning && plannedTeam ? plannedTeam.vice : (state.players.find(p => p.vice)?.id);
+
+  const renderPlayerCard = (p, isBench, benchNum) => {
     const live = liveDataCache[state.currentGW]?.[p.fplId];
     const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
     const injury = p.status && p.status !== 'a';
+    const isCap = p.id === capId;
+    const isVC = p.id === vcId;
     let badge = '';
-    if (p.captain) badge = '<div class="pitch-badge-c">C</div>';
-    else if (p.vice) badge = '<div class="pitch-badge-v">V</div>';
+    if (isCap) badge = '<div class="pitch-badge-c">C</div>';
+    else if (isVC) badge = '<div class="pitch-badge-v">V</div>';
     const injuryBadge = injury ? '<div class="pitch-badge-inj">⚠️</div>' : '';
+    const numBadge = isBench && benchNum ? `<div class="pitch-badge-num">${benchNum}</div>` : '';
     const ptsClass = livePts > 2 ? '' : 'blank';
+    const onClick = planning ? `openActionModal('${p.id}')` : `openPerfModal('${p.id}')`;
     return `
-      <div class="pitch-card ${p.captain ? 'captain' : ''} ${p.vice ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="openPerfModal('${p.id}')">
+      <div class="pitch-card ${isCap ? 'captain' : ''} ${isVC ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="${onClick}">
         ${badge}
         ${injuryBadge}
+        ${numBadge}
         ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
         <div class="pitch-name">${escapeHtml(p.name.split(' ').slice(-1)[0])}</div>
         <div class="pitch-pts ${ptsClass}">${livePts}</div>
@@ -770,50 +807,70 @@ function renderPitchView(container) {
   };
 
   const html = `
-    <div class="pitch-formation">${formation} · GW${state.currentGW || '?'}</div>
-
-    <div class="pitch-row fwd">${fwd.map(p => renderPlayerCard(p)).join('')}</div>
-    <div class="pitch-row mid">${mid.map(p => renderPlayerCard(p)).join('')}</div>
-    <div class="pitch-row def">${def.map(p => renderPlayerCard(p)).join('')}</div>
-    <div class="pitch-row gk">${gk.map(p => renderPlayerCard(p)).join('')}</div>
-
+    <div class="pitch-formation">${formation} · GW${planning && planningGW ? planningGW : (state.currentGW || '?')}${planning ? ' · PLANNING' : ''}</div>
+    <div class="pitch-row fwd">${fwd.map(p => renderPlayerCard(p, false)).join('')}</div>
+    <div class="pitch-row mid">${mid.map(p => renderPlayerCard(p, false)).join('')}</div>
+    <div class="pitch-row def">${def.map(p => renderPlayerCard(p, false)).join('')}</div>
+    <div class="pitch-row gk">${gk.map(p => renderPlayerCard(p, false)).join('')}</div>
     <div class="pitch-bench">
       <div class="pitch-bench-label">Bench</div>
-      <div class="pitch-bench-row">${bench.map(p => renderPlayerCard(p, true)).join('')}</div>
+      <div class="pitch-bench-row">${bench.map((p, i) => renderPlayerCard(p, true, 12 + i)).join('')}</div>
     </div>
   `;
   container.innerHTML = html;
 }
 
-/* ========== TEAM VIEW (dedicated tab) ========== */
+/* ========== TEAM VIEW ========== */
 function renderTeamView() {
   const pitch = document.getElementById('pitch-view-team');
   const banner = document.getElementById('team-summary-banner');
+  const planBanner = document.getElementById('planning-banner');
+  const planCompare = document.getElementById('plan-compare');
+  const planBtn = document.getElementById('plan-next-gw-btn');
+
   if (!pitch) return;
+
+  if (planningMode && planBanner) {
+    planBanner.style.display = 'block';
+    document.getElementById('planning-gw').textContent = planningGW;
+    document.body.classList.add('planning-active');
+  } else if (planBanner) {
+    planBanner.style.display = 'none';
+    document.body.classList.remove('planning-active');
+  }
 
   if (!state.players.length) {
     pitch.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
     if (banner) banner.innerHTML = '';
+    if (planCompare) planCompare.style.display = 'none';
     return;
   }
 
+  // Summary banner
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
   const latest = current[current.length - 1];
-  const starters = state.players.filter(p => !p.bench);
+
+  const useTeam = planningMode && plannedTeam;
+  const starters = useTeam
+    ? plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean)
+    : state.players.filter(p => !p.bench);
+
   const defCount = starters.filter(p => p.pos === 'DEF').length;
   const midCount = starters.filter(p => p.pos === 'MID').length;
   const fwdCount = starters.filter(p => p.pos === 'FWD').length;
   const formation = `${defCount}-${midCount}-${fwdCount}`;
-  const cap = state.players.find(p => p.captain);
-  const vc = state.players.find(p => p.vice);
+  const capId = useTeam ? plannedTeam.captain : state.players.find(p => p.captain)?.id;
+  const vcId = useTeam ? plannedTeam.vice : state.players.find(p => p.vice)?.id;
+  const cap = state.players.find(p => p.id === capId);
+  const vc = state.players.find(p => p.id === vcId);
 
   if (banner) {
     banner.innerHTML = `
       <div class="team-summary-item">
-        <div class="label">This GW</div>
-        <div class="value">${latest?.points || 0} pts</div>
-        <div class="sub">${latest ? 'Rank ' + fmtRank(latest.overall_rank) : '—'}</div>
+        <div class="label">${planningMode ? 'Planning' : 'This GW'}</div>
+        <div class="value">${planningMode ? 'GW' + planningGW : (latest?.points || 0) + ' pts'}</div>
+        <div class="sub">${planningMode ? 'Draft team' : (latest ? 'Rank ' + fmtRank(latest.overall_rank) : '—')}</div>
       </div>
       <div class="team-summary-item">
         <div class="label">Formation</div>
@@ -823,7 +880,7 @@ function renderTeamView() {
       <div class="team-summary-item">
         <div class="label">©️ Captain</div>
         <div class="value">${cap ? escapeHtml(cap.name.split(' ').slice(-1)[0]) : '—'}</div>
-        <div class="sub">${cap ? (cap.gwPoints || 0) + ' pts' : 'Not set'}</div>
+        <div class="sub">${cap ? fmt(cap.price) : 'Not set'}</div>
       </div>
       <div class="team-summary-item">
         <div class="label">🎗️ Vice</div>
@@ -833,7 +890,453 @@ function renderTeamView() {
     `;
   }
 
-  renderPitchView(pitch);
+  renderPitchView(pitch, planningMode);
+
+  // Plan button state
+  if (planBtn) {
+    if (planningMode) {
+      planBtn.style.display = 'none';
+    } else {
+      planBtn.style.display = 'inline-flex';
+      const nextGW = state.nextGW || state.currentGW + 1;
+      planBtn.textContent = `🗓 Plan GW${nextGW}`;
+    }
+  }
+
+  // Plan comparison view
+  if (planCompare) {
+    const nextGW = state.nextGW || state.currentGW + 1;
+    const savedPlan = state.plannedTeams?.[nextGW];
+    if (savedPlan && !planningMode) {
+      planCompare.style.display = 'block';
+      renderPlanCompare(nextGW, savedPlan);
+    } else {
+      planCompare.style.display = 'none';
+    }
+  }
+}
+
+function renderPlanCompare(gw, plan) {
+  const el = document.getElementById('plan-compare-content');
+  if (!el) return;
+
+  const currentStarters = state.players.filter(p => !p.bench).map(p => p.id);
+  const currentBench = state.players.filter(p => p.bench).map(p => p.id);
+  const currentCap = state.players.find(p => p.captain)?.id;
+  const currentVC = state.players.find(p => p.vice)?.id;
+
+  const changes = [];
+
+  // Captain change
+  if (plan.captain !== currentCap) {
+    const from = state.players.find(p => p.id === currentCap);
+    const to = state.players.find(p => p.id === plan.captain);
+    if (to) {
+      changes.push({
+        label: 'Captain',
+        from: from ? from.name : 'None',
+        to: to.name,
+      });
+    }
+  }
+
+  // Vice change
+  if (plan.vice !== currentVC) {
+    const from = state.players.find(p => p.id === currentVC);
+    const to = state.players.find(p => p.id === plan.vice);
+    if (to) {
+      changes.push({
+        label: 'Vice',
+        from: from ? from.name : 'None',
+        to: to.name,
+      });
+    }
+  }
+
+  // Starting XI changes
+  const movedToBench = currentStarters.filter(id => !plan.starters.includes(id));
+  const movedToStart = currentBench.filter(id => plan.starters.includes(id));
+
+  movedToBench.forEach(id => {
+    const p = state.players.find(x => x.id === id);
+    if (p) changes.push({ label: '⬇ Bench', from: p.name, to: 'Bench' });
+  });
+  movedToStart.forEach(id => {
+    const p = state.players.find(x => x.id === id);
+    if (p) changes.push({ label: '⬆ Start', from: 'Bench', to: p.name });
+  });
+
+  // Bench order changes
+  const benchChanged = currentBench.some((id, i) => plan.bench[i] !== id);
+  if (benchChanged && !movedToBench.length && !movedToStart.length) {
+    changes.push({ label: 'Bench order', from: 'Changed', to: 'Reordered' });
+  }
+
+  if (!changes.length) {
+    el.innerHTML = '<div class="plan-compare-empty">No changes — your plan matches your current team for GW' + gw + '.</div>';
+    return;
+  }
+
+  el.innerHTML = `
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">
+      Saved plan for GW${gw} — ${changes.length} change${changes.length !== 1 ? 's' : ''}
+    </div>
+    ${changes.map(c => `
+      <div class="plan-compare-row">
+        <span class="label">${c.label}</span>
+        <span class="from">${escapeHtml(c.from)}</span>
+        <span class="arrow">→</span>
+        <span class="to">${escapeHtml(c.to)}</span>
+      </div>
+    `).join('')}
+    <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn small primary" onclick="enterPlanningMode()">✏️ Edit Plan</button>
+      <button class="btn small danger" onclick="deletePlannedTeam(${gw})">🗑 Delete Plan</button>
+    </div>
+  `;
+}
+
+/* ========== PLANNING MODE ========== */
+function enterPlanningMode() {
+  if (!state.players.length) return toast('Sync first', true);
+
+  const nextGW = state.nextGW || state.currentGW + 1;
+  planningMode = true;
+  planningGW = nextGW;
+
+  // Load saved plan or init from current team
+  const saved = state.plannedTeams?.[nextGW];
+  if (saved) {
+    plannedTeam = { ...saved };
+  } else {
+    plannedTeam = {
+      starters: state.players.filter(p => !p.bench).map(p => p.id),
+      bench: state.players.filter(p => p.bench).map(p => p.id),
+      captain: state.players.find(p => p.captain)?.id || null,
+      vice: state.players.find(p => p.vice)?.id || null,
+    };
+  }
+
+  renderTeamView();
+  toast(`🗓 Planning mode — GW${nextGW}`);
+}
+
+function exitPlanningMode() {
+  if (plannedTeam) {
+    const changed = JSON.stringify(plannedTeam) !== JSON.stringify({
+      starters: state.players.filter(p => !p.bench).map(p => p.id),
+      bench: state.players.filter(p => p.bench).map(p => p.id),
+      captain: state.players.find(p => p.captain)?.id || null,
+      vice: state.players.find(p => p.vice)?.id || null,
+    });
+    if (changed && !confirm('Discard changes to your planned team?')) return;
+  }
+  planningMode = false;
+  plannedTeam = null;
+  planningGW = null;
+  renderTeamView();
+}
+
+function resetPlanningToCurrent() {
+  if (!confirm('Reset plan to your current team?')) return;
+  plannedTeam = {
+    starters: state.players.filter(p => !p.bench).map(p => p.id),
+    bench: state.players.filter(p => p.bench).map(p => p.id),
+    captain: state.players.find(p => p.captain)?.id || null,
+    vice: state.players.find(p => p.vice)?.id || null,
+  };
+  renderTeamView();
+  toast('↺ Reset to current team');
+}
+
+function savePlannedTeam() {
+  if (!planningMode || !plannedTeam || !planningGW) return;
+  if (!state.plannedTeams) state.plannedTeams = {};
+  state.plannedTeams[planningGW] = { ...plannedTeam };
+  saveState();
+  updateTabBadges();
+  toast(`💾 Saved plan for GW${planningGW}`);
+  planningMode = false;
+  plannedTeam = null;
+  planningGW = null;
+  renderTeamView();
+}
+
+function deletePlannedTeam(gw) {
+  if (!confirm(`Delete your plan for GW${gw}?`)) return;
+  if (state.plannedTeams) {
+    delete state.plannedTeams[gw];
+    saveState();
+    updateTabBadges();
+    renderTeamView();
+    toast('Plan deleted');
+  }
+}
+
+/* ========== ACTION MODAL ========== */
+function openActionModal(playerId) {
+  actionPlayerId = playerId;
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return;
+
+  const inStarters = plannedTeam?.starters.includes(p.id);
+  const isCap = plannedTeam?.captain === p.id;
+  const isVC = plannedTeam?.vice === p.id;
+
+  const title = document.getElementById('action-modal-title');
+  const content = document.getElementById('action-modal-content');
+  title.textContent = `Actions — ${p.name}`;
+
+  const live = liveDataCache[state.currentGW]?.[p.fplId];
+  const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
+
+  content.innerHTML = `
+    <div class="action-player-info">
+      ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
+      <div class="info-text">
+        <div class="info-name">${escapeHtml(p.name)}</div>
+        <div class="info-meta">${escapeHtml(p.team)} · ${p.pos} · ${fmt(p.price)} · ${livePts} pts</div>
+      </div>
+    </div>
+    <div class="action-list">
+      ${!isCap ? `
+        <button class="action-btn primary-action" onclick="setCaptainFromAction('${p.id}')">
+          <span class="action-icon">👑</span>
+          <span class="action-info">Make Captain<span class="action-sub">Gets 2× points this GW</span></span>
+        </button>
+      ` : `
+        <button class="action-btn primary-action" onclick="setCaptainFromAction(null)">
+          <span class="action-icon">👑</span>
+          <span class="action-info">Remove Captain<span class="action-sub">Currently ©️</span></span>
+        </button>
+      `}
+      ${!isVC && !isCap ? `
+        <button class="action-btn" onclick="setViceFromAction('${p.id}')">
+          <span class="action-icon">🎗️</span>
+          <span class="action-info">Make Vice-Captain<span class="action-sub">Backup if captain blanks</span></span>
+        </button>
+      ` : ''}
+      ${inStarters ? `
+        <button class="action-btn" onclick="moveToBench('${p.id}')">
+          <span class="action-icon">⬇️</span>
+          <span class="action-info">Move to Bench<span class="action-sub">Sends to bench, auto-swap</span></span>
+        </button>
+      ` : `
+        <button class="action-btn" onclick="moveToStarters('${p.id}')">
+          <span class="action-icon">⬆️</span>
+          <span class="action-info">Move to Starting XI<span class="action-sub">Swap with a starter</span></span>
+        </button>
+      `}
+      <button class="action-btn" onclick="openSwapModal('${p.id}')">
+        <span class="action-icon">🔄</span>
+        <span class="action-info">Swap with...<span class="action-sub">Pick a specific player</span></span>
+      </button>
+      <button class="action-btn" onclick="openPerfModal('${p.id}');closeModal('action-modal')">
+        <span class="action-icon">📊</span>
+        <span class="action-info">View Performance<span class="action-sub">Full stats breakdown</span></span>
+      </button>
+      <button class="action-btn danger-action" onclick="transferOutFromAction('${p.id}')">
+        <span class="action-icon">💸</span>
+        <span class="action-info">Transfer Out<span class="action-sub">Plan a transfer</span></span>
+      </button>
+    </div>
+  `;
+  document.getElementById('action-modal').classList.add('active');
+}
+
+function setCaptainFromAction(playerId) {
+  if (!plannedTeam) return;
+  plannedTeam.captain = playerId;
+  if (playerId && plannedTeam.vice === playerId) plannedTeam.vice = null;
+  closeModal('action-modal');
+  renderTeamView();
+  toast(playerId ? '👑 Captain set' : '👑 Captain removed');
+}
+
+function setViceFromAction(playerId) {
+  if (!plannedTeam) return;
+  plannedTeam.vice = playerId;
+  if (playerId && plannedTeam.captain === playerId) plannedTeam.captain = null;
+  closeModal('action-modal');
+  renderTeamView();
+  toast('🎗️ Vice set');
+}
+
+function moveToBench(playerId) {
+  if (!plannedTeam) return;
+  // Find 1st sub (index 0 in bench) to swap with
+  if (plannedTeam.bench.length === 0) return;
+  const firstSub = plannedTeam.bench[0];
+  // If moving GK to bench, need to swap with bench GK (index 3)
+  const p = state.players.find(x => x.id === playerId);
+  let swapIdx = 0;
+  if (p.pos === 'GK') {
+    swapIdx = plannedTeam.bench.findIndex(id => state.players.find(x => x.id === id)?.pos === 'GK');
+    if (swapIdx === -1) return toast('No bench GK to swap', true);
+  }
+  const swapId = plannedTeam.bench[swapIdx];
+  plannedTeam.starters = plannedTeam.starters.filter(id => id !== playerId);
+  plannedTeam.starters.push(swapId);
+  plannedTeam.bench[swapIdx] = playerId;
+  // Clear captain/vice if they were moved to bench
+  if (plannedTeam.captain === playerId) plannedTeam.captain = null;
+  if (plannedTeam.vice === playerId) plannedTeam.vice = null;
+  closeModal('action-modal');
+  renderTeamView();
+  toast('⬇️ Moved to bench');
+}
+
+function moveToStarters(playerId) {
+  if (!plannedTeam) return;
+  const p = state.players.find(x => x.id === playerId);
+  // Find a starter to swap with (same position ideally)
+  const starterIds = plannedTeam.starters;
+  const samePos = starterIds.find(id => state.players.find(x => x.id === id)?.pos === p.pos);
+  const target = samePos || starterIds[starterIds.length - 1];
+  if (!target) return;
+
+  const benchIdx = plannedTeam.bench.indexOf(playerId);
+  const targetIdx = plannedTeam.starters.indexOf(target);
+  if (benchIdx === -1 || targetIdx === -1) return;
+
+  plannedTeam.bench[benchIdx] = target;
+  plannedTeam.starters[targetIdx] = playerId;
+
+  if (plannedTeam.captain === target) plannedTeam.captain = null;
+  if (plannedTeam.vice === target) plannedTeam.vice = null;
+
+  closeModal('action-modal');
+  renderTeamView();
+  toast('⬆️ Moved to starting XI');
+}
+
+function openSwapModal(playerId) {
+  actionPlayerId = playerId;
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return;
+
+  const inStarters = plannedTeam?.starters.includes(p.id);
+  // Show opposite side
+  const candidates = inStarters
+    ? plannedTeam.bench.map(id => state.players.find(x => x.id === id)).filter(Boolean)
+    : plannedTeam.starters.map(id => state.players.find(x => x.id === id)).filter(Boolean);
+
+  swapTargetId = null;
+
+  const title = document.getElementById('swap-modal-title');
+  const sub = document.getElementById('swap-modal-sub');
+  const content = document.getElementById('swap-modal-content');
+
+  title.textContent = `Swap ${p.name}`;
+  sub.textContent = inStarters
+    ? 'Choose a bench player to swap in:'
+    : 'Choose a starter to swap out:';
+
+  if (!candidates.length) {
+    content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No players available to swap with.</div>';
+    document.getElementById('swap-modal').classList.add('active');
+    return;
+  }
+
+  content.innerHTML = `<div class="swap-grid">${candidates.map(c => {
+    // Check validity: must maintain 1 GK in XI, 3 DEF, 2 MID, 1 FWD
+    const isValid = canSwap(p, c, inStarters);
+    return `
+      <button class="swap-option ${isValid ? '' : 'disabled'}" ${isValid ? `onclick="doSwap('${c.id}')"` : 'disabled'}>
+        ${c.photo ? `<img src="${c.photo}" alt="" onerror="this.style.display='none'">` : ''}
+        <div>
+          <div class="swap-name">${escapeHtml(c.name.split(' ').slice(-1)[0])}</div>
+          <div class="swap-meta">${c.pos} · ${fmt(c.price)}</div>
+        </div>
+      </button>
+    `;
+  }).join('')}</div>`;
+
+  document.getElementById('swap-modal').classList.add('active');
+}
+
+function canSwap(p1, p2, p1InStarters) {
+  // If both same position, always OK (swap within formation)
+  if (p1.pos === p2.pos) return true;
+
+  // If p1 is going to bench and p2 comes in, need to check formation validity
+  const tempStarters = [...plannedTeam.starters];
+  const tempBench = [...plannedTeam.bench];
+
+  if (p1InStarters) {
+    // p1 out, p2 in
+    const i1 = tempStarters.indexOf(p1.id);
+    const i2 = tempBench.indexOf(p2.id);
+    if (i1 === -1 || i2 === -1) return false;
+    tempStarters[i1] = p2.id;
+    tempBench[i2] = p1.id;
+  } else {
+    // p1 in, p2 out
+    const i1 = tempBench.indexOf(p1.id);
+    const i2 = tempStarters.indexOf(p2.id);
+    if (i1 === -1 || i2 === -1) return false;
+    tempBench[i1] = p2.id;
+    tempStarters[i2] = p1.id;
+  }
+
+  const starters = tempStarters.map(id => state.players.find(x => x.id === id)).filter(Boolean);
+  const gk = starters.filter(p => p.pos === 'GK').length;
+  const def = starters.filter(p => p.pos === 'DEF').length;
+  const mid = starters.filter(p => p.pos === 'MID').length;
+  const fwd = starters.filter(p => p.pos === 'FWD').length;
+
+  // FPL rules: 1 GK, 3-5 DEF, 2-5 MID, 1-3 FWD
+  if (gk !== 1) return false;
+  if (def < 3 || def > 5) return false;
+  if (mid < 2 || mid > 5) return false;
+  if (fwd < 1 || fwd > 3) return false;
+
+  return true;
+}
+
+function doSwap(targetId) {
+  if (!plannedTeam || !actionPlayerId || !targetId) return;
+  const p1 = actionPlayerId;
+  const p2 = targetId;
+  const p1InStarters = plannedTeam.starters.includes(p1);
+
+  if (p1InStarters) {
+    const i1 = plannedTeam.starters.indexOf(p1);
+    const i2 = plannedTeam.bench.indexOf(p2);
+    if (i1 === -1 || i2 === -1) return;
+    plannedTeam.starters[i1] = p2;
+    plannedTeam.bench[i2] = p1;
+  } else {
+    const i1 = plannedTeam.bench.indexOf(p1);
+    const i2 = plannedTeam.starters.indexOf(p2);
+    if (i1 === -1 || i2 === -1) return;
+    plannedTeam.bench[i1] = p2;
+    plannedTeam.starters[i2] = p1;
+  }
+
+  // Clear captain/vice if moved to bench
+  if (plannedTeam.bench.includes(plannedTeam.captain)) plannedTeam.captain = null;
+  if (plannedTeam.bench.includes(plannedTeam.vice)) plannedTeam.vice = null;
+
+  closeModal('swap-modal');
+  closeModal('action-modal');
+  renderTeamView();
+  toast('🔄 Swapped');
+}
+
+function transferOutFromAction(playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return;
+  closeModal('action-modal');
+  planningMode = false;
+  plannedTeam = null;
+  renderTeamView();
+  openPlanModal(null, state.nextGW || state.currentGW + 1);
+  setTimeout(() => {
+    document.getElementById('pl-out').value = p.name;
+    document.getElementById('pl-out-price').value = p.price;
+    onOutPlayerChange();
+  }, 100);
 }
 
 /* ========== TIMELINE ========== */
@@ -1866,6 +2369,7 @@ function exportData() {
     teamId, players: state.players, plans: state.plans,
     budget: state.budget, bank: state.bank,
     freeTransfers: state.freeTransfers, managerName: state.managerName,
+    plannedTeams: state.plannedTeams || {},
   }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const a = document.createElement('a');
@@ -1934,3 +2438,16 @@ window.onInPlayerChange = onInPlayerChange;
 window.updateBankImpact = updateBankImpact;
 window.toggleSquadView = toggleSquadView;
 window.renderTeamView = renderTeamView;
+window.enterPlanningMode = enterPlanningMode;
+window.exitPlanningMode = exitPlanningMode;
+window.resetPlanningToCurrent = resetPlanningToCurrent;
+window.savePlannedTeam = savePlannedTeam;
+window.deletePlannedTeam = deletePlannedTeam;
+window.openActionModal = openActionModal;
+window.setCaptainFromAction = setCaptainFromAction;
+window.setViceFromAction = setViceFromAction;
+window.moveToBench = moveToBench;
+window.moveToStarters = moveToStarters;
+window.openSwapModal = openSwapModal;
+window.doSwap = doSwap;
+window.transferOutFromAction = transferOutFromAction;
