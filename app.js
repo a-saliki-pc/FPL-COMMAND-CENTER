@@ -1,12 +1,13 @@
 /* =========================================================
-   FPL Command Center v6 — app.js
-   Auto-sync · Autocomplete · Player Performance
+   FPL Command Center v7 — app.js
+   Pitch View Edition
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
 const FPL_API = 'https://fantasy.premierleague.com/api';
 const IMG_BASE = 'https://resources.premierleague.com/premierleague/photos/players/110x140';
 const BADGE_BASE = 'https://resources.premierleague.com/premierleague25/badges';
+const KIT_BASE = 'https://fantasy.premierleague.com/dist/img/shirts/standard';
 
 const FAMILY = [
   { id: '1115676', name: 'Adyb Saliki',   emoji: '🧠' },
@@ -36,29 +37,9 @@ const CHIP_EMOJI_SHORT = { WC: '🃏', BB: '🎲', TC: '⚡', FH: '🏠' };
 const CHIP_NAME_SHORT = { WC: 'Wildcard', BB: 'Bench Boost', TC: 'Triple Captain', FH: 'Free Hit' };
 const MOOD_EMOJI = { hot: '🔥', climbing: '📈', steady: '➡️', slipping: '📉', dead: '💀' };
 
-const ROAST_BEST = [
-  "Peaked early. Enjoy it while it lasts.", "Wildcard magic or pure luck? We'll never know.",
-  "The differentials finally paid off.", "Captained the right guy for once.",
-  "Even a broken clock is right twice a day.", "Bench boost finally justified its existence.",
-  "Putting the family on notice.", "This is what happens when the picks work.",
-  "Somebody call Guinness — this was elite.", "The template delivered. Fair play.",
-];
-const ROAST_WORST = [
-  "Could have been worse. It wasn't much better.", "Even the bench outscored him this week.",
-  "Sweating through a premium pick that blanked.", "Started the season in clown mode. Legendary.",
-  "Died on the pitch. RIP his GW.", "Straight to the bin. Nothing saved.",
-  "At least the app didn't crash. Silver linings.", "Someone check on him.",
-  "The wooden spoon is calling.", "Trusted his gut. His gut was wrong. Again.",
-];
-const ROAST_WEEKLY = [
-  "Family group chat is going to be spicy this week.",
-  "Somebody's getting roasted in the WhatsApp group.",
-  "Rivalries intensifying. Popcorn ready.",
-  "Nobody wants to be last. Yet here we are.",
-  "Peak drama. Peak FPL. Peak family.",
-  "Remember: it's just a game. (It's not.)",
-  "Screenshots incoming. Defend yourselves.",
-];
+const ROAST_BEST = ["Peaked early. Enjoy it while it lasts.", "Wildcard magic or pure luck? We'll never know.", "The differentials finally paid off.", "Captained the right guy for once.", "Even a broken clock is right twice a day.", "Bench boost finally justified its existence.", "Putting the family on notice.", "This is what happens when the picks work.", "Somebody call Guinness — this was elite.", "The template delivered. Fair play."];
+const ROAST_WORST = ["Could have been worse. It wasn't much better.", "Even the bench outscored him this week.", "Sweating through a premium pick that blanked.", "Started the season in clown mode. Legendary.", "Died on the pitch. RIP his GW.", "Straight to the bin. Nothing saved.", "At least the app didn't crash. Silver linings.", "Someone check on him.", "The wooden spoon is calling.", "Trusted his gut. His gut was wrong. Again."];
+const ROAST_WEEKLY = ["Family group chat is going to be spicy this week.", "Somebody's getting roasted in the WhatsApp group.", "Rivalries intensifying. Popcorn ready.", "Nobody wants to be last. Yet here we are.", "Peak drama. Peak FPL. Peak family.", "Remember: it's just a game. (It's not.)", "Screenshots incoming. Defend yourselves."];
 
 /* ========== STATE ========== */
 let state = null;
@@ -71,11 +52,9 @@ let gwResultCache = {};
 let openAccordions = {};
 let syncTimer = null;
 let isSyncing = false;
+let squadView = localStorage.getItem('fpl-cc-squad-view') || 'pitch'; // 'pitch' or 'list'
 
 function storageKey(id) { return `fpl-cc-v6:${id}`; }
-function oldStorageKey(id) { return `fpl-cc-v4:${id}`; }
-function v5StorageKey(id) { return `fpl-cc-v5:${id}`; }
-
 function emptyState() {
   return {
     players: [], plans: [], budget: 100, bank: 0, freeTransfers: 1,
@@ -86,13 +65,8 @@ function emptyState() {
 }
 function loadFor(id) {
   try {
-    let raw = localStorage.getItem(storageKey(id));
-    if (!raw) raw = localStorage.getItem(v5StorageKey(id));
-    if (!raw) raw = localStorage.getItem(oldStorageKey(id));
-    if (raw) {
-      localStorage.setItem(storageKey(id), raw);
-      return { ...emptyState(), ...JSON.parse(raw) };
-    }
+    const raw = localStorage.getItem(storageKey(id));
+    if (raw) return { ...emptyState(), ...JSON.parse(raw) };
   } catch (e) { console.warn(e); }
   return emptyState();
 }
@@ -166,6 +140,22 @@ function toggleTheme() {
   applyTheme(mode);
 })();
 
+/* ========== SQUAD VIEW TOGGLE ========== */
+function toggleSquadView() {
+  squadView = squadView === 'pitch' ? 'list' : 'pitch';
+  localStorage.setItem('fpl-cc-squad-view', squadView);
+  renderSquad();
+  updateViewToggleButtons();
+  toast(squadView === 'pitch' ? '⚽ Pitch view' : '📋 List view');
+}
+function updateViewToggleButtons() {
+  const label = squadView === 'pitch' ? '📋 List' : '⚽ Pitch';
+  ['view-toggle-dashboard', 'view-toggle-team'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = label;
+  });
+}
+
 /* ========== SYNC DOT ========== */
 function updateSyncDot() {
   const dot = document.getElementById('sync-dot');
@@ -227,8 +217,7 @@ async function fetchFixturesForGW(gw) {
 async function fetchTeamFixtures(teamId, count = 3) {
   try {
     const data = await fpl(`/fixtures/?team=${teamId}`);
-    const upcoming = (data || []).filter(f => !f.finished).slice(0, count);
-    return upcoming;
+    return (data || []).filter(f => !f.finished).slice(0, count);
   } catch (e) { return []; }
 }
 function formatFixtureDay(iso) {
@@ -276,10 +265,8 @@ async function fetchGWResult(gw) {
   const mine = state.familyData?.find(f => f.id === teamId);
   const hist = mine?.history?.current?.find(g => g.event === gw);
   if (!hist) return null;
-
   let captain = '?';
   let chip = hist.active_chip || null;
-
   try {
     const picks = await fpl(`/entry/${teamId}/event/${gw}/picks/`).catch(() => null);
     if (picks && picks.picks) {
@@ -290,15 +277,10 @@ async function fetchGWResult(gw) {
       }
     }
   } catch (e) {}
-
   const result = {
-    points: hist.points || 0,
-    rank: hist.overall_rank || 0,
-    transfers: hist.event_transfers || 0,
-    transferCost: hist.event_transfers_cost || 0,
-    bank: (hist.bank || 0) / 10,
-    value: (hist.value || 0) / 10,
-    chip, captain,
+    points: hist.points || 0, rank: hist.overall_rank || 0,
+    transfers: hist.event_transfers || 0, transferCost: hist.event_transfers_cost || 0,
+    bank: (hist.bank || 0) / 10, value: (hist.value || 0) / 10, chip, captain,
   };
   gwResultCache[gw] = result;
   return result;
@@ -312,17 +294,14 @@ async function syncAll(showToast = true) {
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing...'; }
   updateSyncDot();
   if (showToast) toast('🔄 Syncing from FPL...');
-
   try {
     const boot = await fpl('/bootstrap-static/');
     state.bootstrap = { elements: boot.elements, teams: boot.teams, events: boot.events };
-
     const finished = boot.events.filter(e => e.finished);
     let currentGW;
     if (finished.length > 0) currentGW = Math.max(...finished.map(e => e.id));
     else currentGW = boot.events.find(e => e.is_next)?.id || 1;
     state.currentGW = currentGW;
-
     const nextEv = boot.events.find(e => e.is_next) || boot.events.find(e => !e.finished);
     state.nextGW = nextEv?.id || null;
     state.nextDeadline = nextEv?.deadline_time || null;
@@ -339,12 +318,10 @@ async function syncAll(showToast = true) {
       } catch (e) { familyData.push({ ...m, picks: null, history: null, entry: null }); }
     }
     state.familyData = familyData;
-
     const mine = familyData.find(f => f.id === teamId);
     if (mine && mine.picks) mergeMySquad(mine.picks);
 
     fetchPriceChanges(boot.elements);
-
     liveDataCache = {};
     captainHistoryCache = null;
     fixturesCache = {};
@@ -387,14 +364,12 @@ function archiveOldPlans() {
 function fetchPriceChanges(elements) {
   if (!elements) return;
   const withData = elements.filter(e => e.minutes > 0);
-  const risers = withData.filter(e => e.cost_change_event > 0 || (e.transfers_in_event - e.transfers_out_event) > 50000)
+  state.priceRisers = withData.filter(e => e.cost_change_event > 0 || (e.transfers_in_event - e.transfers_out_event) > 50000)
     .sort((a, b) => (b.cost_change_event * 1e6 + (b.transfers_in_event - b.transfers_out_event)) - (a.cost_change_event * 1e6 + (a.transfers_in_event - a.transfers_out_event)))
     .slice(0, 5).map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
-  const fallers = withData.filter(e => e.cost_change_event < 0 || (e.transfers_out_event - e.transfers_in_event) > 50000)
+  state.priceFallers = withData.filter(e => e.cost_change_event < 0 || (e.transfers_out_event - e.transfers_in_event) > 50000)
     .sort((a, b) => (a.cost_change_event * 1e6 + (a.transfers_out_event - a.transfers_in_event)) - (b.cost_change_event * 1e6 + (b.transfers_out_event - b.transfers_in_event)))
     .slice(0, 5).map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
-  state.priceRisers = risers;
-  state.priceFallers = fallers;
 }
 
 function mergeMySquad(picksData) {
@@ -449,6 +424,7 @@ function startApp() {
   document.getElementById('app').style.display = 'block';
   renderAll();
   updateSyncDot();
+  updateViewToggleButtons();
   window.scrollTo(0, 0);
   startAutoSync();
   const stale = !state.lastSync || (Date.now() - state.lastSync > 30 * 60 * 1000);
@@ -469,15 +445,12 @@ function showShortcuts() { document.getElementById('shortcuts-modal').classList.
 /* ========== AUTO-SYNC ========== */
 function startAutoSync() {
   if (syncTimer) clearInterval(syncTimer);
-  // Check every 5 min if data is stale
   syncTimer = setInterval(() => {
     if (isSyncing) return;
     const age = Date.now() - (state?.lastSync || 0);
     if (age > 30 * 60 * 1000) syncAll(false);
   }, 5 * 60 * 1000);
 }
-
-// Sync when tab returns to focus
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && state && teamId) {
     const age = Date.now() - (state.lastSync || 0);
@@ -496,6 +469,7 @@ function switchView(name, el) {
   if (name === 'leaderboard') renderLeaderboard();
   if (name === 'history') renderHistory();
   if (name === 'players') renderPlayers();
+  if (name === 'team') renderTeamView();
   if (name === 'planner') {
     if (!state?.currentGW && state?.lastSync === 0) {
       const el2 = document.getElementById('season-planner');
@@ -548,9 +522,11 @@ function renderAll() {
   renderTimeline();
   renderMiniPlans();
   renderSeasonPlanner();
+  renderTeamView();
   renderHistory();
   renderPlayers();
   updateSyncDot();
+  updateViewToggleButtons();
 }
 
 function renderHeader() {
@@ -573,42 +549,22 @@ function renderGWGlanceBanner() {
   const current = mine?.history?.current || [];
   if (!current.length) { el.innerHTML = ''; return; }
   const latest = current[current.length - 1];
-
-  // Best/worst performers this GW
   const withLive = state.players.map(p => {
     const live = liveDataCache[state.currentGW]?.[p.fplId];
     const pts = live?.stats?.total_points ?? p.gwPoints ?? 0;
-    return { name: p.name, pts, pos: p.pos };
+    return { name: p.name, pts };
   });
   withLive.sort((a, b) => b.pts - a.pts);
   const best = withLive[0];
   const worst = withLive[withLive.length - 1];
   const capPts = state.players.find(p => p.captain);
-
   el.innerHTML = `
     <div class="gw-glance-banner">
-      <div class="glance-stat">
-        <div class="label">This GW</div>
-        <div class="value good">${latest.points} pts</div>
-        <div class="sub">Rank ${fmtRank(latest.overall_rank)}</div>
-      </div>
-      <div class="glance-stat">
-        <div class="label">🔥 Best Player</div>
-        <div class="value good">${best ? best.pts : 0}</div>
-        <div class="sub">${best ? escapeHtml(best.name) : '—'}</div>
-      </div>
-      <div class="glance-stat">
-        <div class="label">💀 Worst Player</div>
-        <div class="value bad">${worst ? worst.pts : 0}</div>
-        <div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div>
-      </div>
-      <div class="glance-stat">
-        <div class="label">©️ Captain</div>
-        <div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div>
-        <div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div>
-      </div>
-    </div>
-  `;
+      <div class="glance-stat"><div class="label">This GW</div><div class="value good">${latest.points} pts</div><div class="sub">Rank ${fmtRank(latest.overall_rank)}</div></div>
+      <div class="glance-stat"><div class="label">🔥 Best Player</div><div class="value good">${best ? best.pts : 0}</div><div class="sub">${best ? escapeHtml(best.name) : '—'}</div></div>
+      <div class="glance-stat"><div class="label">💀 Worst Player</div><div class="value bad">${worst ? worst.pts : 0}</div><div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div></div>
+      <div class="glance-stat"><div class="label">©️ Captain</div><div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div><div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div></div>
+    </div>`;
 }
 
 function renderStats() {
@@ -618,13 +574,11 @@ function renderStats() {
   el.textContent = size + '/15';
   const subs = { 0: 'Sync to load', 15: '✅ Squad complete' };
   document.getElementById('stat-size-sub').textContent = subs[size] || (15 - size) + ' spots left';
-
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
   const latest = current[current.length - 1];
   document.getElementById('stat-gwpts').textContent = latest?.points || '—';
   document.getElementById('stat-gwpts-sub').textContent = state.currentGW ? `GW${state.currentGW}` : 'This week';
-
   if (current.length > 0) {
     const best = current.reduce((m, g) => g.points > m.points ? g : m, current[0]);
     const worst = current.reduce((m, g) => g.points < m.points ? g : m, current[0]);
@@ -655,15 +609,12 @@ function renderCaptainSuggestion() {
     const score = form * 3 + pts * 0.1 + ict * 0.05 + (minutes > 500 ? 5 : 0);
     return { name: p.name, team: p.team, pos: p.pos, price: p.price, form, pts, score, ownership: parseFloat(el2.selected_by_percent) || 0 };
   }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 3);
-  if (!candidates.length) { el.innerHTML = '<div class="empty">No candidates</div>'; return; }
+  if (!candidates.length) return;
   const medals = ['🥇', '🥈', '🥉'];
   el.innerHTML = candidates.map((c, i) => `
     <div class="lb-row">
       <div class="lb-rank">${medals[i]}</div>
-      <div>
-        <div class="lb-name">${escapeHtml(c.name)} <span class="pos-badge" data-pos="${c.pos}">${c.pos}</span></div>
-        <div class="lb-teamname">${escapeHtml(c.team)} · ${fmt(c.price)} · ${c.ownership.toFixed(1)}% owned</div>
-      </div>
+      <div><div class="lb-name">${escapeHtml(c.name)} <span class="pos-badge" data-pos="${c.pos}">${c.pos}</span></div><div class="lb-teamname">${escapeHtml(c.team)} · ${fmt(c.price)} · ${c.ownership.toFixed(1)}% owned</div></div>
       <div class="lb-stat">${c.form.toFixed(1)}<small>Form</small></div>
       <div class="lb-stat">${c.pts}<small>Pts</small></div>
       <div class="lb-stat">${Math.round(c.score)}<small>Score</small></div>
@@ -717,22 +668,32 @@ function renderPlayerMarks(p) {
   return `<div class="player-marks">${marks.join('')}</div>`;
 }
 
+/* ========== SQUAD RENDERER (list or pitch based on squadView) ========== */
 function renderSquad() {
   const grid = document.getElementById('squad-grid');
-  if (!grid) return;
+  const dashPitch = document.getElementById('pitch-view-dashboard');
+  if (!grid || !dashPitch) return;
+
+  if (squadView === 'list') {
+    grid.style.display = 'grid';
+    dashPitch.style.display = 'none';
+    renderSquadList(grid);
+  } else {
+    grid.style.display = 'none';
+    dashPitch.style.display = 'block';
+    renderPitchView(dashPitch);
+  }
+}
+
+function renderSquadList(grid) {
   if (state.players.length === 0) {
     grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><span class="emoji">👥</span>Click <strong>🔄 Sync All</strong> to load your squad</div>';
     return;
   }
-  const hasOrder = state.players.some(p => typeof p.order === 'number' && p.order < 99);
-  const sorted = hasOrder
-    ? [...state.players].sort((a,b) => (a.order ?? 99) - (b.order ?? 99))
-    : [...state.players].sort((a,b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || b.price - a.price);
-
+  const sorted = getSortedPlayers();
   const bp = state.bootstrap;
   const elementsMap = {};
   if (bp) bp.elements.forEach(e => elementsMap[e.id] = e);
-
   const bestCap = [...state.players].filter(p => !p.bench)
     .map(p => {
       const el2 = elementsMap[p.fplId];
@@ -763,11 +724,119 @@ function renderSquad() {
         ${isRecommendedCap && !p.captain ? '<div style="font-size:0.6rem;color:var(--gold);margin-top:6px;font-weight:800">⭐ Cap pick</div>' : ''}
         ${p.bench ? '<div class="bench-label">Bench</div>' : ''}
         <button class="remove-btn" onclick="event.stopPropagation(); removePlayer('${p.id}')">✕</button>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
 
+function getSortedPlayers() {
+  const hasOrder = state.players.some(p => typeof p.order === 'number' && p.order < 99);
+  if (hasOrder) return [...state.players].sort((a,b) => (a.order ?? 99) - (b.order ?? 99));
+  return [...state.players].sort((a,b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || b.price - a.price);
+}
+
+function renderPitchView(container) {
+  if (state.players.length === 0) {
+    container.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
+    return;
+  }
+
+  const starters = state.players.filter(p => !p.bench);
+  const bench = state.players.filter(p => p.bench);
+
+  const gk = starters.filter(p => p.pos === 'GK');
+  const def = starters.filter(p => p.pos === 'DEF');
+  const mid = starters.filter(p => p.pos === 'MID');
+  const fwd = starters.filter(p => p.pos === 'FWD');
+
+  const formation = `${def.length}-${mid.length}-${fwd.length}`;
+
+  const renderPlayerCard = (p, isBench = false) => {
+    const live = liveDataCache[state.currentGW]?.[p.fplId];
+    const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
+    const injury = p.status && p.status !== 'a';
+    let badge = '';
+    if (p.captain) badge = '<div class="pitch-badge-c">C</div>';
+    else if (p.vice) badge = '<div class="pitch-badge-v">V</div>';
+    const injuryBadge = injury ? '<div class="pitch-badge-inj">⚠️</div>' : '';
+    const ptsClass = livePts > 2 ? '' : 'blank';
+    return `
+      <div class="pitch-card ${p.captain ? 'captain' : ''} ${p.vice ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="openPerfModal('${p.id}')">
+        ${badge}
+        ${injuryBadge}
+        ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
+        <div class="pitch-name">${escapeHtml(p.name.split(' ').slice(-1)[0])}</div>
+        <div class="pitch-pts ${ptsClass}">${livePts}</div>
+      </div>`;
+  };
+
+  const html = `
+    <div class="pitch-formation">${formation} · GW${state.currentGW || '?'}</div>
+
+    <div class="pitch-row fwd">${fwd.map(p => renderPlayerCard(p)).join('')}</div>
+    <div class="pitch-row mid">${mid.map(p => renderPlayerCard(p)).join('')}</div>
+    <div class="pitch-row def">${def.map(p => renderPlayerCard(p)).join('')}</div>
+    <div class="pitch-row gk">${gk.map(p => renderPlayerCard(p)).join('')}</div>
+
+    <div class="pitch-bench">
+      <div class="pitch-bench-label">Bench</div>
+      <div class="pitch-bench-row">${bench.map(p => renderPlayerCard(p, true)).join('')}</div>
+    </div>
+  `;
+  container.innerHTML = html;
+}
+
+/* ========== TEAM VIEW (dedicated tab) ========== */
+function renderTeamView() {
+  const pitch = document.getElementById('pitch-view-team');
+  const banner = document.getElementById('team-summary-banner');
+  if (!pitch) return;
+
+  if (!state.players.length) {
+    pitch.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
+    if (banner) banner.innerHTML = '';
+    return;
+  }
+
+  const mine = state.familyData?.find(f => f.id === teamId);
+  const current = mine?.history?.current || [];
+  const latest = current[current.length - 1];
+  const starters = state.players.filter(p => !p.bench);
+  const defCount = starters.filter(p => p.pos === 'DEF').length;
+  const midCount = starters.filter(p => p.pos === 'MID').length;
+  const fwdCount = starters.filter(p => p.pos === 'FWD').length;
+  const formation = `${defCount}-${midCount}-${fwdCount}`;
+  const cap = state.players.find(p => p.captain);
+  const vc = state.players.find(p => p.vice);
+
+  if (banner) {
+    banner.innerHTML = `
+      <div class="team-summary-item">
+        <div class="label">This GW</div>
+        <div class="value">${latest?.points || 0} pts</div>
+        <div class="sub">${latest ? 'Rank ' + fmtRank(latest.overall_rank) : '—'}</div>
+      </div>
+      <div class="team-summary-item">
+        <div class="label">Formation</div>
+        <div class="value">${formation}</div>
+        <div class="sub">${starters.length} starters</div>
+      </div>
+      <div class="team-summary-item">
+        <div class="label">©️ Captain</div>
+        <div class="value">${cap ? escapeHtml(cap.name.split(' ').slice(-1)[0]) : '—'}</div>
+        <div class="sub">${cap ? (cap.gwPoints || 0) + ' pts' : 'Not set'}</div>
+      </div>
+      <div class="team-summary-item">
+        <div class="label">🎗️ Vice</div>
+        <div class="value">${vc ? escapeHtml(vc.name.split(' ').slice(-1)[0]) : '—'}</div>
+        <div class="sub">${vc ? fmt(vc.price) : 'Not set'}</div>
+      </div>
+    `;
+  }
+
+  renderPitchView(pitch);
+}
+
+/* ========== TIMELINE ========== */
 function renderTimeline() {
   const t = document.getElementById('timeline');
   if (!t) return;
@@ -818,7 +887,6 @@ function renderMiniPlans() {
       </div>`;
   }).join('');
 }
-
 function buildGWSummary(plan) {
   const parts = [];
   if (plan) {
@@ -834,7 +902,6 @@ function buildGWSummary(plan) {
 function renderSeasonPlanner(retryCount = 0) {
   const el = document.getElementById('season-planner');
   if (!el) return;
-
   if (!state.currentGW) {
     if (retryCount < 5) {
       el.innerHTML = '<div class="empty"><span class="emoji">⏳</span>Syncing... please wait (' + (retryCount + 1) + '/5)</div>';
@@ -844,7 +911,6 @@ function renderSeasonPlanner(retryCount = 0) {
     }
     return;
   }
-
   const chipsUsed = (state.familyData?.find(f => f.id === teamId)?.history?.current || []).filter(g => g.active_chip).length || 0;
   const plannedTransfers = state.plans.filter(p => (p.outName && p.inName) && p.gw >= state.currentGW).length;
   document.getElementById('pl-status-bank').textContent = fmt(state.bank);
@@ -862,7 +928,6 @@ function renderSeasonPlanner(retryCount = 0) {
     const statusLabel = status === 'past' ? '✅ Done' : status === 'current' ? '🔥 This Week' : '⏳ Upcoming';
     const result = gwResultCache[gw];
     const pastSummary = status === 'past' && result ? `<span class="gw-acc-pill captain">${result.points} pts</span>` : '';
-
     html += `
       <div class="gw-accordion ${status} ${isOpen ? 'open' : ''}" data-gw="${gw}">
         <div class="gw-accordion-header" onclick="toggleAccordion(${gw})">
@@ -882,7 +947,6 @@ function renderSeasonPlanner(retryCount = 0) {
       </div>`;
   }
   el.innerHTML = html;
-
   if (state.familyData) {
     for (let gw = 1; gw < current; gw++) {
       if (!gwResultCache[gw]) {
@@ -891,7 +955,6 @@ function renderSeasonPlanner(retryCount = 0) {
     }
   }
 }
-
 async function updateGWPastSummary(gw, result) {
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"] .gw-accordion-header`);
   if (!el) return;
@@ -908,15 +971,12 @@ async function updateGWPastSummary(gw, result) {
     if (bodyEl) bodyEl.innerHTML = renderGWAccordionBody(gw, state.plans.find(p => p.gw === gw), 'past');
   }
 }
-
 function renderGWAccordionBody(gw, plan, status) {
   const isPast = status === 'past';
   const result = gwResultCache[gw];
   if (isPast) return renderPastGWBody(gw, plan, result);
-
   const fixtures = fixturesCache[gw] || [];
   const myPlayers = myPlayersInFixtures(fixtures);
-
   let planHtml = '';
   if (plan && (plan.outName || plan.inName || plan.captain || plan.chip || plan.note)) {
     const net = (Number(plan.inPrice) || 0) - (Number(plan.outPrice) || 0);
@@ -940,7 +1000,6 @@ function renderGWAccordionBody(gw, plan, status) {
   } else {
     planHtml = `<div class="gw-empty-plan">No plan yet for GW${gw}.<br><button class="btn small primary" style="margin-top:10px" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button></div>`;
   }
-
   let fixturesHtml = '';
   if (myPlayers.length) {
     fixturesHtml = `<div class="plan-fixtures"><div class="plan-fixtures-title">⚽ Your players this GW</div>
@@ -951,7 +1010,6 @@ function renderGWAccordionBody(gw, plan, status) {
         <span class="fixture-diff diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
       </div>`).join('')}</div>`;
   }
-
   const actionsHtml = `<div class="gw-plan-actions">
     ${plan ? `<button class="btn small" onclick="openPlanModal('${plan.id}')">✏️ Edit</button>` : ''}
     ${plan ? `<button class="btn small danger" onclick="removePlan('${plan.id}')">🗑 Delete</button>` : ''}
@@ -959,7 +1017,6 @@ function renderGWAccordionBody(gw, plan, status) {
   </div>`;
   return planHtml + fixturesHtml + actionsHtml;
 }
-
 function renderPastGWBody(gw, plan, result) {
   const pred = plan ? `<div class="gw-compare-col predicted">
     <h5>📋 You Planned</h5>
@@ -970,7 +1027,6 @@ function renderPastGWBody(gw, plan, result) {
     ${plan.note ? `<div class="gw-compare-line"><span class="label">Note</span><span class="value" style="font-style:italic">${escapeHtml(plan.note)}</span></div>` : ''}
     ${!plan.outName && !plan.inName && !plan.captain && !plan.chip ? '<div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded</div>' : ''}
   </div>` : `<div class="gw-compare-col predicted"><h5>📋 You Planned</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded for GW${gw}</div></div>`;
-
   const actual = result ? `<div class="gw-compare-col actual">
     <h5>✅ Actual Result</h5>
     <div class="gw-compare-line"><span class="label">Points</span><span class="value" style="color:var(--mint)">${result.points}</span></div>
@@ -981,10 +1037,8 @@ function renderPastGWBody(gw, plan, result) {
     <div class="gw-compare-line"><span class="label">Bank</span><span class="value">${fmt(result.bank)}</span></div>
     <div class="gw-compare-line"><span class="label">Value</span><span class="value">${fmt(result.value)}</span></div>
   </div>` : `<div class="gw-compare-col actual"><h5>✅ Actual Result</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">Loading...</div></div>`;
-
   return `<div class="gw-compare">${pred}${actual}</div>`;
 }
-
 function toggleAccordion(gw) {
   openAccordions[gw] = !openAccordions[gw];
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"]`);
@@ -1038,7 +1092,6 @@ function renderLeaderboard() {
   renderGlance();
   renderCaptainPicks().catch(e => console.warn('Captain picks failed', e));
 }
-
 function renderWeeklyRoast() {
   const el = document.getElementById('weekly-roast');
   if (!el) return;
@@ -1049,7 +1102,6 @@ function renderWeeklyRoast() {
   const lines = buildRoastLines();
   el.innerHTML = `<div class="roast-title">🔥 WEEKLY ROAST — GW${state.currentGW || '?'}</div>${lines.map(l => `<div class="roast-line">${l}</div>`).join('')}`;
 }
-
 function buildRoastLines() {
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
@@ -1072,7 +1124,6 @@ function buildRoastLines() {
     `_ ${randomQuote(ROAST_WEEKLY)} _`,
   ].filter(Boolean);
 }
-
 function renderMainLeaderboard() {
   const card = document.getElementById('leaderboard-card');
   if (!card) return;
@@ -1093,7 +1144,6 @@ function renderMainLeaderboard() {
     </div>`;
   }).join('');
 }
-
 function calcMood(row) {
   const hist = row.history?.current || [];
   if (hist.length < 2) return 'steady';
@@ -1106,7 +1156,6 @@ function calcMood(row) {
   if (gw < avg - 5) return 'slipping';
   return 'steady';
 }
-
 function renderBestGW() {
   const card = document.getElementById('best-gw-card');
   if (!card) return;
@@ -1132,7 +1181,6 @@ function renderBestGW() {
     </div>`;
   }).join('');
 }
-
 function renderWorstGW() {
   const card = document.getElementById('worst-gw-card');
   if (!card) return;
@@ -1157,7 +1205,6 @@ function renderWorstGW() {
     </div>`;
   }).join('');
 }
-
 function renderTrophyCabinet() {
   const el = document.getElementById('trophy-cabinet');
   if (!el) return;
@@ -1179,7 +1226,6 @@ function renderTrophyCabinet() {
       <div class="trophy-info"><div class="trophy-name">👑 ${w.emoji || ''} ${escapeHtml(w.name.split(' ')[0])}</div><div class="trophy-detail">${w.points} pts${w.chip ? ' · ' + (CHIP_EMOJI[w.chip] || '') : ''}</div></div>
     </div>`).join('')}</div>`;
 }
-
 async function fetchAllCaptainPicks() {
   if (captainHistoryCache) return captainHistoryCache;
   const bp = state.bootstrap;
@@ -1213,7 +1259,6 @@ async function fetchAllCaptainPicks() {
   captainHistoryCache = result;
   return result;
 }
-
 async function renderCaptainPicks() {
   const worstEl = document.getElementById('worst-captain-card');
   const bestEl = document.getElementById('best-captain-card');
@@ -1248,7 +1293,6 @@ async function renderCaptainPicks() {
   worstEl.innerHTML = worstList.map(r => renderRow(r, r.worst, 'worst')).join('');
   bestEl.innerHTML = bestList.map(r => renderRow(r, r.best, 'best')).join('');
 }
-
 function renderGlance() {
   const el = document.getElementById('weekly-glance');
   if (!el) return;
@@ -1370,24 +1414,14 @@ function renderPlayers() {
 async function openPerfModal(playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
-
   const bp = state.bootstrap;
   const el2 = bp?.elements?.find(x => x.id === p.fplId);
   if (!el2) return;
-
   const currentGW = state.currentGW;
   const liveMap = currentGW ? await fetchLiveGW(currentGW) : {};
   const live = liveMap[p.fplId];
   const stats = live?.stats || {};
-
-  // Get season form (last 5 GWs)
-  const mine = state.familyData?.find(f => f.id === teamId);
-  const gwHistory = mine?.history?.current || [];
-
-  // Next fixtures
   const nextFixtures = await fetchTeamFixtures(p.teamId, 3);
-
-  // Calculate performance breakdown
   const goals = stats.goals_scored || 0;
   const assists = stats.assists || 0;
   const bonus = stats.bonus || 0;
@@ -1398,7 +1432,6 @@ async function openPerfModal(playerId) {
   const minutes = stats.minutes || 0;
   const defcon = stats.defensive_contribution || 0;
   const totalPts = stats.total_points || 0;
-
   const goalPts = goals * (p.pos === 'FWD' ? 4 : p.pos === 'MID' ? 5 : 6);
   const assistPts = assists * 3;
   const csPts = cleanSheets ? (p.pos === 'GK' || p.pos === 'DEF' ? 6 : p.pos === 'MID' ? 1 : 0) : 0;
@@ -1408,11 +1441,6 @@ async function openPerfModal(playerId) {
   const minutesPts = minutes >= 60 ? 2 : minutes > 0 ? 1 : 0;
   const defconPts = (p.pos === 'DEF' && defcon >= 10) ? 2 : (p.pos === 'MID' && defcon >= 12) ? 2 : 0;
   const otherPts = totalPts - goalPts - assistPts - csPts - bonusPts - cardPts - savePts - minutesPts - defconPts;
-
-  // Value change since season start
-  const priceChange = (el2.now_cost - el2.now_cost) / 10; // we don't have "bought at" so show 0
-
-  // Bar chart data
   const barData = [
     { label: '⚽ Goals', value: goalPts, cls: 'mint' },
     { label: '👟 Assists', value: assistPts, cls: 'mint' },
@@ -1437,7 +1465,6 @@ async function openPerfModal(playerId) {
         </div>
       </div>
     </div>
-
     <div class="perf-section">
       <div class="perf-section-title">🎯 This GW — ${totalPts} pts</div>
       <div class="perf-breakdown">
@@ -1453,21 +1480,13 @@ async function openPerfModal(playerId) {
         <div class="perf-total"><span>Total</span><span class="perf-points">${totalPts} pts</span></div>
       </div>
     </div>
-
     ${barData.length > 1 ? `
       <div class="perf-section">
         <div class="perf-section-title">📊 Contribution Breakdown</div>
         <div class="perf-bar-chart">
-          ${barData.map(b => `
-            <div class="perf-bar-row">
-              <span>${b.label}</span>
-              <div class="perf-bar-track"><div class="perf-bar-fill ${b.cls}" style="width:${(b.value / maxBar) * 100}%"></div></div>
-              <span style="text-align:right;font-weight:800;color:var(--mint)">+${b.value}</span>
-            </div>`).join('')}
+          ${barData.map(b => `<div class="perf-bar-row"><span>${b.label}</span><div class="perf-bar-track"><div class="perf-bar-fill ${b.cls}" style="width:${(b.value / maxBar) * 100}%"></div></div><span style="text-align:right;font-weight:800;color:var(--mint)">+${b.value}</span></div>`).join('')}
         </div>
-      </div>
-    ` : ''}
-
+      </div>` : ''}
     <div class="perf-section">
       <div class="perf-section-title">📊 Season Overview</div>
       <div class="perf-info-grid">
@@ -1479,7 +1498,6 @@ async function openPerfModal(playerId) {
         <div class="perf-info-card"><div class="label">Minutes</div><div class="value">${el2.minutes || 0}</div></div>
       </div>
     </div>
-
     ${nextFixtures.length ? `
       <div class="perf-section">
         <div class="perf-section-title">📅 Next Fixtures</div>
@@ -1497,17 +1515,13 @@ async function openPerfModal(playerId) {
             </div>`;
           }).join('')}
         </div>
-      </div>
-    ` : ''}
-
+      </div>` : ''}
     ${p.news ? `<div class="perf-injury-note">⚠️ ${escapeHtml(p.news)}</div>` : ''}
-
     <div class="modal-actions">
       <button class="btn" onclick="quickTransferOut('${p.id}')">🔄 Transfer Out</button>
       <button class="btn primary" onclick="closeModal('perf-modal')">Close</button>
     </div>
   `;
-
   document.getElementById('perf-modal-content').innerHTML = html;
   document.getElementById('perf-modal').classList.add('active');
 }
@@ -1528,52 +1542,34 @@ function quickTransferOut(playerId) {
 function fillDatalists() {
   const bp = state.bootstrap;
   if (!bp) return;
-
-  // All players list
   const allPlayersDl = document.getElementById('all-players-list');
   const allPlayersDl2 = document.getElementById('all-players-list2');
   const teamMap = {};
   bp.teams.forEach(t => teamMap[t.id] = t.short_name);
-
-  const allOpts = bp.elements
-    .sort((a, b) => b.total_points - a.total_points)
-    .slice(0, 300)
-    .map(el => `<option value="${escapeHtml(el.web_name)}">${teamMap[el.team] || '?'} · ${fmt(el.now_cost / 10)} · ${POS_MAP[el.element_type]}</option>`)
-    .join('');
-
+  const allOpts = bp.elements.sort((a, b) => b.total_points - a.total_points).slice(0, 300)
+    .map(el => `<option value="${escapeHtml(el.web_name)}">${teamMap[el.team] || '?'} · ${fmt(el.now_cost / 10)} · ${POS_MAP[el.element_type]}</option>`).join('');
   if (allPlayersDl) allPlayersDl.innerHTML = allOpts;
   if (allPlayersDl2) allPlayersDl2.innerHTML = allOpts;
-
-  // Squad players (for OUT + Captain + Vice)
   const squadDl = document.getElementById('squad-players-list');
   const captainDl = document.getElementById('captain-options');
   const captainDl2 = document.getElementById('captain-options-2');
-
-  const squadOpts = (state.players || [])
-    .sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos])
-    .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${fmt(p.price)} · ${p.pos}</option>`)
-    .join('');
-
+  const squadOpts = (state.players || []).sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos])
+    .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${fmt(p.price)} · ${p.pos}</option>`).join('');
   const capOpts = (state.players || []).filter(p => !p.bench)
-    .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${p.pos}</option>`)
-    .join('');
-
+    .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${p.pos}</option>`).join('');
   if (squadDl) squadDl.innerHTML = squadOpts;
   if (captainDl) captainDl.innerHTML = capOpts;
   if (captainDl2) captainDl2.innerHTML = capOpts;
 }
-
 function onOutPlayerChange() {
   const name = document.getElementById('pl-out').value.trim();
   if (!name) return;
   const p = state.players.find(x => x.name.toLowerCase() === name.toLowerCase());
   if (p) {
     document.getElementById('pl-out-price').value = p.price;
-    // If OUT player was captain, prefill captain empty
     updateBankImpact();
   }
 }
-
 function onInPlayerChange() {
   const name = document.getElementById('pl-in').value.trim();
   if (!name) return;
@@ -1585,7 +1581,6 @@ function onInPlayerChange() {
     updateBankImpact();
   }
 }
-
 function updateBankImpact() {
   const outP = parseFloat(document.getElementById('pl-out-price').value) || 0;
   const inP = parseFloat(document.getElementById('pl-in-price').value) || 0;
@@ -1638,7 +1633,7 @@ function optimizeLineup() {
     if (pl) pl.order = bp2++;
   });
   saveState();
-  renderSquad();
+  renderSquad(); renderTeamView();
   toast(`🤖 Optimized — Captain: ${sortedXI[0].name}`);
 }
 
@@ -1704,11 +1699,9 @@ function saveFT() {
   state.freeTransfers = parseInt(document.getElementById('ft-value').value) || 0;
   saveState(); renderAll(); closeModal('ft-modal'); toast('FT saved 🔄');
 }
-
 function openPlanModal(id = null, gw = null) {
   editingPlanId = id;
   fillDatalists();
-
   const title = document.getElementById('plan-modal-title');
   const gwEl = document.getElementById('pl-gw');
   const outEl = document.getElementById('pl-out');
@@ -1723,10 +1716,8 @@ function openPlanModal(id = null, gw = null) {
   const delBtn = document.getElementById('pl-delete-btn');
   const bankImpact = document.getElementById('pl-bank-impact');
   const hitWarning = document.getElementById('pl-hit-warning');
-
   if (bankImpact) bankImpact.style.display = 'none';
   if (hitWarning) hitWarning.style.display = 'none';
-
   if (id) {
     const p = state.plans.find(x => x.id === id);
     if (p) {
@@ -1756,11 +1747,9 @@ function openPlanModal(id = null, gw = null) {
     [gwEl, outEl, outPEl, inEl, inPEl, chipEl, capEl, viceEl, noteEl, ftEl].forEach(el => el.disabled = false);
   }
   document.getElementById('plan-modal').classList.add('active');
-
   const gwVal = parseInt(gwEl.value) || 1;
   renderPlanFixtures(gwVal);
   updateBankImpact();
-
   gwEl.oninput = () => {
     const v = parseInt(gwEl.value) || 1;
     renderPlanFixtures(v);
@@ -1768,14 +1757,12 @@ function openPlanModal(id = null, gw = null) {
     [gwEl, outEl, outPEl, inEl, inPEl, chipEl, capEl, viceEl, noteEl, ftEl].forEach(el => el.disabled = isPast);
   };
 }
-
 function deletePlanFromModal() {
   if (!editingPlanId) return;
   if (!confirm('Delete this plan?')) return;
   removePlan(editingPlanId);
   closeModal('plan-modal');
 }
-
 async function renderPlanFixtures(gw) {
   const preview = document.getElementById('pl-fixtures-preview');
   if (!preview) return;
@@ -1815,7 +1802,6 @@ async function renderPlanFixtures(gw) {
   }
   preview.innerHTML = html;
 }
-
 function savePlan() {
   const gw = parseInt(document.getElementById('pl-gw').value);
   const outName = document.getElementById('pl-out').value.trim();
@@ -1828,11 +1814,8 @@ function savePlan() {
   const note = document.getElementById('pl-note').value.trim();
   const ftAfterRaw = document.getElementById('pl-ft-after').value;
   const ftAfter = ftAfterRaw === '' ? null : parseInt(ftAfterRaw);
-
   if (!gw || gw < 1 || gw > 38) return toast('GW must be 1-38', true);
   if (getGWStatus(gw) === 'past') return toast('Cannot plan for a past GW', true);
-
-  // Hit warning: check if there are multiple transfers planned for same GW
   const sameGWPlans = state.plans.filter(p => p.gw === gw && p.id !== editingPlanId && p.outName && p.inName);
   if (outName && inName && sameGWPlans.length >= state.freeTransfers) {
     const warning = document.getElementById('pl-hit-warning');
@@ -1842,7 +1825,6 @@ function savePlan() {
       return;
     }
   }
-
   const payload = { gw, outName, outPrice, inName, inPrice, chip, captain, vice, note, ftAfter };
   if (editingPlanId) {
     Object.assign(state.plans.find(x => x.id === editingPlanId), payload);
@@ -1857,7 +1839,6 @@ function removePlan(id) {
   state.plans = state.plans.filter(p => p.id !== id);
   saveState(); renderAll(); toast('Removed');
 }
-
 function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 document.querySelectorAll('.modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('active'); });
@@ -1867,7 +1848,6 @@ document.addEventListener('keydown', e => {
     document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'));
     return;
   }
-  // Shortcuts (only when no modal is open and no input focused)
   if (document.querySelector('.modal-overlay.active')) return;
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -1875,11 +1855,12 @@ document.addEventListener('keydown', e => {
   if (key === 'n') { e.preventDefault(); openPlanModal(); }
   if (key === 's') { e.preventDefault(); syncAll(true); }
   if (key === 'd') { e.preventDefault(); switchView('dashboard', document.querySelector('[data-view="dashboard"]')); }
+  if (key === 't') { e.preventDefault(); switchView('team', document.querySelector('[data-view="team"]')); }
   if (key === 'p') { e.preventDefault(); switchView('planner', document.querySelector('[data-view="planner"]')); }
   if (key === 'l') { e.preventDefault(); switchView('leaderboard', document.querySelector('[data-view="leaderboard"]')); }
   if (key === 'h') { e.preventDefault(); switchView('history', document.querySelector('[data-view="history"]')); }
+  if (key === 'v') { e.preventDefault(); toggleSquadView(); }
 });
-
 function exportData() {
   const data = JSON.stringify({
     teamId, players: state.players, plans: state.plans,
@@ -1913,7 +1894,7 @@ window.addEventListener('DOMContentLoaded', () => {
   }
   startCountdown();
   updateSyncDot();
-  // Update sync dot every minute
+  updateViewToggleButtons();
   setInterval(updateSyncDot, 60000);
 });
 
@@ -1951,3 +1932,5 @@ window.quickTransferOut = quickTransferOut;
 window.onOutPlayerChange = onOutPlayerChange;
 window.onInPlayerChange = onInPlayerChange;
 window.updateBankImpact = updateBankImpact;
+window.toggleSquadView = toggleSquadView;
+window.renderTeamView = renderTeamView;
