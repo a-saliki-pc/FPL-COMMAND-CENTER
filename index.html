@@ -139,7 +139,6 @@
         <button class="btn" onclick="exportData()">⬇ Export</button>
         <button class="btn danger" onclick="resetAll()">🗑 Reset</button>
       </div>
-      <!-- Squad container — swaps between grid and pitch -->
       <div id="squad-container">
         <div class="squad-grid" id="squad-grid">
           <div class="empty" style="grid-column:1/-1"><span class="emoji">👥</span>Click <strong>🔄 Sync All</strong> to load your squad</div>
@@ -160,13 +159,28 @@
 
   </div>
 
-  <!-- ============ MY TEAM (Pitch View) ============ -->
+  <!-- ============ MY TEAM (Pitch + Planning Mode) ============ -->
   <div id="view-team" class="view" style="display:none">
+
+    <!-- Planning mode banner (only visible when in planning mode) -->
+    <div id="planning-banner" class="planning-banner" style="display:none">
+      <div class="planning-banner-inner">
+        <div class="planning-title">🗓 Planning Mode — GW<span id="planning-gw">6</span></div>
+        <div class="planning-actions">
+          <button class="btn small" onclick="exitPlanningMode()">✖ Cancel</button>
+          <button class="btn small" onclick="resetPlanningToCurrent()">↺ Reset</button>
+          <button class="btn small primary" onclick="savePlannedTeam()">💾 Save Plan</button>
+        </div>
+      </div>
+      <div class="planning-hint" id="planning-hint">Tap any player on the pitch to swap, set captain, or transfer out.</div>
+    </div>
+
     <section>
       <div class="section-title">
         ⚽ My Team
         <span class="hint-inline">
-          <button class="view-toggle" onclick="toggleSquadView()" id="view-toggle-team">📋 List</button>
+          <button class="view-toggle" id="view-toggle-team" onclick="toggleSquadView()">📋 List</button>
+          <button class="btn small primary" id="plan-next-gw-btn" onclick="enterPlanningMode()">🗓 Plan Next GW</button>
         </span>
       </div>
 
@@ -178,6 +192,15 @@
         </div>
       </div>
     </section>
+
+    <!-- Planned team comparison (only visible when a plan exists) -->
+    <div id="plan-compare" style="display:none">
+      <section>
+        <div class="section-title">📋 Your Plan vs Current</div>
+        <div id="plan-compare-content" class="plan-compare-content"></div>
+      </section>
+    </div>
+
   </div>
 
   <!-- ============ SEASON PLANNER ============ -->
@@ -295,12 +318,35 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v7 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v8 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
 
-<!-- MODALS -->
+<!-- ============ MODALS ============ -->
+
+<!-- PLAYER ACTION MODAL (for planning mode) -->
+<div class="modal-overlay" id="action-modal">
+  <div class="modal action-modal">
+    <h3 id="action-modal-title">Player Actions</h3>
+    <div id="action-modal-content"></div>
+    <div class="modal-actions">
+      <button class="btn primary" onclick="closeModal('action-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- SWAP MODAL (pick who to swap with) -->
+<div class="modal-overlay" id="swap-modal">
+  <div class="modal swap-modal">
+    <h3 id="swap-modal-title">Swap Player</h3>
+    <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px" id="swap-modal-sub">Choose who to bring in:</p>
+    <div id="swap-modal-content"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('swap-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="player-modal">
   <div class="modal">
@@ -416,9 +462,10 @@
     <h3>❓ How it works</h3>
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh data when you return to the tab (if >30 min old).</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">2. Pitch View</strong> — see your team in real formation on a pitch. Toggle to List anytime.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Autocomplete everywhere</strong> — start typing any player name.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Player details</strong> — click any player to see full performance breakdown.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">2. My Team tab</strong> — Pitch/List view with player faces.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Plan Next GW</strong> — tap the "🗓 Plan Next GW" button to enter planning mode. Tap any player to swap, set captain, or transfer out.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. Autocomplete everywhere</strong> — start typing any player name.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">5. Player details</strong> — click any player to see full performance breakdown.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
@@ -434,7 +481,7 @@
       <div class="shortcut-row"><kbd>S</kbd><span>Sync from FPL</span></div>
       <div class="shortcut-row"><kbd>D</kbd><span>Dashboard tab</span></div>
       <div class="shortcut-row"><kbd>T</kbd><span>My Team tab</span></div>
-      <div class="shortcut-row"><kbd>P</kbd><span>Season Planner tab</span></div>
+      <div class="shortcut-row"><kbd>P</kbd><span>Planner tab</span></div>
       <div class="shortcut-row"><kbd>L</kbd><span>Family League tab</span></div>
       <div class="shortcut-row"><kbd>H</kbd><span>My History tab</span></div>
       <div class="shortcut-row"><kbd>V</kbd><span>Toggle Pitch / List view</span></div>
