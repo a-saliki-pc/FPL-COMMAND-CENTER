@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v5 — app.js
-   Season Planner Edition
+   FPL Command Center v6 — app.js
+   Auto-sync · Autocomplete · Player Performance
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -37,28 +37,18 @@ const CHIP_NAME_SHORT = { WC: 'Wildcard', BB: 'Bench Boost', TC: 'Triple Captain
 const MOOD_EMOJI = { hot: '🔥', climbing: '📈', steady: '➡️', slipping: '📉', dead: '💀' };
 
 const ROAST_BEST = [
-  "Peaked early. Enjoy it while it lasts.",
-  "Wildcard magic or pure luck? We'll never know.",
-  "The differentials finally paid off.",
-  "Captained the right guy for once.",
-  "Even a broken clock is right twice a day.",
-  "Bench boost finally justified its existence.",
-  "Putting the family on notice.",
-  "This is what happens when the picks work.",
-  "Somebody call Guinness — this was elite.",
-  "The template delivered. Fair play.",
+  "Peaked early. Enjoy it while it lasts.", "Wildcard magic or pure luck? We'll never know.",
+  "The differentials finally paid off.", "Captained the right guy for once.",
+  "Even a broken clock is right twice a day.", "Bench boost finally justified its existence.",
+  "Putting the family on notice.", "This is what happens when the picks work.",
+  "Somebody call Guinness — this was elite.", "The template delivered. Fair play.",
 ];
 const ROAST_WORST = [
-  "Could have been worse. It wasn't much better.",
-  "Even the bench outscored him this week.",
-  "Sweating through a premium pick that blanked.",
-  "Started the season in clown mode. Legendary.",
-  "Died on the pitch. RIP his GW.",
-  "Straight to the bin. Nothing saved.",
-  "At least the app didn't crash. Silver linings.",
-  "Someone check on him.",
-  "The wooden spoon is calling.",
-  "Trusted his gut. His gut was wrong. Again.",
+  "Could have been worse. It wasn't much better.", "Even the bench outscored him this week.",
+  "Sweating through a premium pick that blanked.", "Started the season in clown mode. Legendary.",
+  "Died on the pitch. RIP his GW.", "Straight to the bin. Nothing saved.",
+  "At least the app didn't crash. Silver linings.", "Someone check on him.",
+  "The wooden spoon is calling.", "Trusted his gut. His gut was wrong. Again.",
 ];
 const ROAST_WEEKLY = [
   "Family group chat is going to be spicy this week.",
@@ -77,11 +67,15 @@ let pickedId = null;
 let liveDataCache = {};
 let captainHistoryCache = null;
 let fixturesCache = {};
-let gwResultCache = {};   // { gw: { points, rank, transfers, chip, captainName } }
-let openAccordions = {};  // { gw: true/false }
+let gwResultCache = {};
+let openAccordions = {};
+let syncTimer = null;
+let isSyncing = false;
 
-function storageKey(id) { return `fpl-cc-v5:${id}`; }
+function storageKey(id) { return `fpl-cc-v6:${id}`; }
 function oldStorageKey(id) { return `fpl-cc-v4:${id}`; }
+function v5StorageKey(id) { return `fpl-cc-v5:${id}`; }
+
 function emptyState() {
   return {
     players: [], plans: [], budget: 100, bank: 0, freeTransfers: 1,
@@ -93,15 +87,12 @@ function emptyState() {
 function loadFor(id) {
   try {
     let raw = localStorage.getItem(storageKey(id));
-    // Migrate from v4 if first time
-    if (!raw) {
-      raw = localStorage.getItem(oldStorageKey(id));
-      if (raw) {
-        localStorage.setItem(storageKey(id), raw);
-        console.log('Migrated from v4 storage');
-      }
+    if (!raw) raw = localStorage.getItem(v5StorageKey(id));
+    if (!raw) raw = localStorage.getItem(oldStorageKey(id));
+    if (raw) {
+      localStorage.setItem(storageKey(id), raw);
+      return { ...emptyState(), ...JSON.parse(raw) };
     }
-    if (raw) return { ...emptyState(), ...JSON.parse(raw) };
   } catch (e) { console.warn(e); }
   return emptyState();
 }
@@ -140,6 +131,16 @@ function formatTransfers(n) {
   if (abs >= 1000) return sign + Math.round(abs / 1000) + 'k';
   return sign + abs;
 }
+function timeAgo(ts) {
+  if (!ts) return 'never';
+  const diff = Date.now() - ts;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return min + ' min ago';
+  const h = Math.floor(min / 60);
+  if (h < 24) return h + 'h ago';
+  return Math.floor(h / 24) + 'd ago';
+}
 
 /* ========== THEME ========== */
 function applyTheme(mode) {
@@ -164,6 +165,24 @@ function toggleTheme() {
   const mode = saved || (window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   applyTheme(mode);
 })();
+
+/* ========== SYNC DOT ========== */
+function updateSyncDot() {
+  const dot = document.getElementById('sync-dot');
+  const wrap = document.getElementById('sync-dot-wrap');
+  if (!dot || !wrap) return;
+  if (isSyncing) {
+    dot.className = 'sync-dot syncing';
+    wrap.title = 'Syncing now...';
+    return;
+  }
+  const last = state?.lastSync || 0;
+  const age = Date.now() - last;
+  if (!last) { dot.className = 'sync-dot old'; wrap.title = 'Never synced'; return; }
+  if (age < 30 * 60 * 1000) { dot.className = 'sync-dot fresh'; wrap.title = 'Fresh · synced ' + timeAgo(last); }
+  else if (age < 6 * 60 * 60 * 1000) { dot.className = 'sync-dot stale'; wrap.title = 'Stale · synced ' + timeAgo(last); }
+  else { dot.className = 'sync-dot old'; wrap.title = 'Old · synced ' + timeAgo(last); }
+}
 
 /* ========== PROXY ========== */
 async function fpl(path) {
@@ -193,10 +212,7 @@ async function fetchLiveGW(gw) {
     (data.elements || []).forEach(el => { map[el.id] = el; });
     liveDataCache[gw] = map;
     return map;
-  } catch (e) {
-    liveDataCache[gw] = {};
-    return {};
-  }
+  } catch (e) { liveDataCache[gw] = {}; return {}; }
 }
 
 /* ========== FIXTURES ========== */
@@ -206,13 +222,17 @@ async function fetchFixturesForGW(gw) {
     const data = await fpl(`/fixtures/?event=${gw}`);
     fixturesCache[gw] = data || [];
     return fixturesCache[gw];
-  } catch (e) {
-    fixturesCache[gw] = [];
-    return [];
-  }
+  } catch (e) { fixturesCache[gw] = []; return []; }
+}
+async function fetchTeamFixtures(teamId, count = 3) {
+  try {
+    const data = await fpl(`/fixtures/?team=${teamId}`);
+    const upcoming = (data || []).filter(f => !f.finished).slice(0, count);
+    return upcoming;
+  } catch (e) { return []; }
 }
 function formatFixtureDay(iso) {
-  if (!iso) return 'Date TBC';
+  if (!iso) return 'TBC';
   const d = new Date(iso);
   const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -227,16 +247,11 @@ function myPlayersInFixtures(fixtures) {
     const isHome = fix.team_h === p.teamId;
     const opp = isHome ? fix.team_a : fix.team_h;
     const diff = isHome ? fix.team_h_difficulty : fix.team_a_difficulty;
-    involved.push({
-      player: p.name, pos: p.pos, team: p.team, teamId: p.teamId,
-      opp: getTeamInfo(opp), home: isHome, difficulty: diff || 3,
-    });
+    involved.push({ player: p.name, pos: p.pos, team: p.team, teamId: p.teamId, opp: getTeamInfo(opp), home: isHome, difficulty: diff || 3 });
   });
   return involved;
 }
-function sortFixtures(list) {
-  return [...list].sort((a, b) => new Date(a.kickoff_time || 0) - new Date(b.kickoff_time || 0));
-}
+function sortFixtures(list) { return [...list].sort((a, b) => new Date(a.kickoff_time || 0) - new Date(b.kickoff_time || 0)); }
 function groupFixturesByDay(fixtures) {
   const groups = {};
   fixtures.forEach(f => {
@@ -254,20 +269,14 @@ function getGWStatus(gw) {
   if (gw === current) return 'current';
   return 'upcoming';
 }
-function isGWPlayed(gw) {
-  const ev = state.bootstrap?.events?.find(e => e.id === gw);
-  return ev ? ev.finished === true : false;
-}
 
-/* ========== GW RESULT (from FPL) ========== */
+/* ========== GW RESULT ========== */
 async function fetchGWResult(gw) {
   if (gwResultCache[gw]) return gwResultCache[gw];
-
   const mine = state.familyData?.find(f => f.id === teamId);
   const hist = mine?.history?.current?.find(g => g.event === gw);
   if (!hist) return null;
 
-  // Try to fetch picks for that GW to get captain
   let captain = '?';
   let chip = hist.active_chip || null;
 
@@ -280,7 +289,7 @@ async function fetchGWResult(gw) {
         if (el2) captain = el2.web_name;
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {}
 
   const result = {
     points: hist.points || 0,
@@ -289,8 +298,7 @@ async function fetchGWResult(gw) {
     transferCost: hist.event_transfers_cost || 0,
     bank: (hist.bank || 0) / 10,
     value: (hist.value || 0) / 10,
-    chip,
-    captain,
+    chip, captain,
   };
   gwResultCache[gw] = result;
   return result;
@@ -298,8 +306,11 @@ async function fetchGWResult(gw) {
 
 /* ========== SYNC ========== */
 async function syncAll(showToast = true) {
+  if (isSyncing) return;
+  isSyncing = true;
   const btn = document.getElementById('sync-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing...'; }
+  updateSyncDot();
   if (showToast) toast('🔄 Syncing from FPL...');
 
   try {
@@ -325,9 +336,7 @@ async function syncAll(showToast = true) {
           fpl(`/entry/${m.id}/`).catch(() => null),
         ]);
         familyData.push({ ...m, picks, history, entry });
-      } catch (e) {
-        familyData.push({ ...m, picks: null, history: null, entry: null });
-      }
+      } catch (e) { familyData.push({ ...m, picks: null, history: null, entry: null }); }
     }
     state.familyData = familyData;
 
@@ -336,13 +345,11 @@ async function syncAll(showToast = true) {
 
     fetchPriceChanges(boot.elements);
 
-    // Reset caches
     liveDataCache = {};
     captainHistoryCache = null;
     fixturesCache = {};
     gwResultCache = {};
 
-    // Prefetch live + fixtures for current + next 4
     const prefetchGws = [];
     for (let i = 0; i < 5; i++) {
       const gw = currentGW + i;
@@ -353,47 +360,39 @@ async function syncAll(showToast = true) {
       ...prefetchGws.map(gw => fetchFixturesForGW(gw)),
     ]);
 
-    // Cleanup: archive plans older than current GW
     archiveOldPlans();
-
     state.lastSync = Date.now();
     saveState();
     renderAll();
+    setTimeout(() => renderSeasonPlanner(), 100);
     if (showToast) toast(`✅ Synced — GW${currentGW} loaded`);
   } catch (e) {
     console.error(e);
     if (showToast) toast('Sync failed: ' + e.message, true);
   } finally {
+    isSyncing = false;
     if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync All from FPL'; }
+    updateSyncDot();
   }
 }
 
 function archiveOldPlans() {
-  // Nothing to physically delete — plans for past GWs become read-only via getGWStatus.
-  // But we clean up plans that have no meaningful content for past GWs.
   const current = state.currentGW || 1;
   state.plans = state.plans.filter(p => {
-    // Keep if it's a future/current plan
     if (p.gw >= current) return true;
-    // For past GWs, only keep if it had real content (transfer, captain, chip, note)
-    const hasContent = p.outName || p.inName || p.captain || p.chip || p.note;
-    return hasContent;
+    return p.outName || p.inName || p.captain || p.chip || p.note;
   });
 }
 
 function fetchPriceChanges(elements) {
   if (!elements) return;
   const withData = elements.filter(e => e.minutes > 0);
-  const risers = withData
-    .filter(e => e.cost_change_event > 0 || (e.transfers_in_event - e.transfers_out_event) > 50000)
+  const risers = withData.filter(e => e.cost_change_event > 0 || (e.transfers_in_event - e.transfers_out_event) > 50000)
     .sort((a, b) => (b.cost_change_event * 1e6 + (b.transfers_in_event - b.transfers_out_event)) - (a.cost_change_event * 1e6 + (a.transfers_in_event - a.transfers_out_event)))
-    .slice(0, 5)
-    .map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
-  const fallers = withData
-    .filter(e => e.cost_change_event < 0 || (e.transfers_out_event - e.transfers_in_event) > 50000)
+    .slice(0, 5).map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
+  const fallers = withData.filter(e => e.cost_change_event < 0 || (e.transfers_out_event - e.transfers_in_event) > 50000)
     .sort((a, b) => (a.cost_change_event * 1e6 + (a.transfers_out_event - a.transfers_in_event)) - (b.cost_change_event * 1e6 + (b.transfers_out_event - b.transfers_in_event)))
-    .slice(0, 5)
-    .map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
+    .slice(0, 5).map(e => ({ name: e.web_name, price: e.now_cost / 10, change: e.cost_change_event / 10, netTransfers: (e.transfers_in_event || 0) - (e.transfers_out_event || 0) }));
   state.priceRisers = risers;
   state.priceFallers = fallers;
 }
@@ -429,8 +428,7 @@ function renderManagerPicker() {
   wrap.innerHTML = FAMILY.map(m => `
     <button class="manager-pill" data-id="${m.id}" onclick="pickManager('${m.id}', this)">
       ${m.emoji} ${escapeHtml(m.name)}<small>Team ID ${m.id}</small>
-    </button>
-  `).join('');
+    </button>`).join('');
 }
 function pickManager(id, el) {
   pickedId = id;
@@ -450,7 +448,9 @@ function startApp() {
   document.getElementById('welcome').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   renderAll();
+  updateSyncDot();
   window.scrollTo(0, 0);
+  startAutoSync();
   const stale = !state.lastSync || (Date.now() - state.lastSync > 30 * 60 * 1000);
   if (stale) setTimeout(() => syncAll(false), 400);
 }
@@ -464,6 +464,27 @@ function logout() {
   document.querySelectorAll('.manager-pill').forEach(p => p.classList.remove('selected'));
 }
 function showHelp() { document.getElementById('help-modal').classList.add('active'); }
+function showShortcuts() { document.getElementById('shortcuts-modal').classList.add('active'); }
+
+/* ========== AUTO-SYNC ========== */
+function startAutoSync() {
+  if (syncTimer) clearInterval(syncTimer);
+  // Check every 5 min if data is stale
+  syncTimer = setInterval(() => {
+    if (isSyncing) return;
+    const age = Date.now() - (state?.lastSync || 0);
+    if (age > 30 * 60 * 1000) syncAll(false);
+  }, 5 * 60 * 1000);
+}
+
+// Sync when tab returns to focus
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && state && teamId) {
+    const age = Date.now() - (state.lastSync || 0);
+    if (age > 30 * 60 * 1000 && !isSyncing) syncAll(false);
+    updateSyncDot();
+  }
+});
 
 /* ========== NAV ========== */
 function switchView(name, el) {
@@ -475,7 +496,15 @@ function switchView(name, el) {
   if (name === 'leaderboard') renderLeaderboard();
   if (name === 'history') renderHistory();
   if (name === 'players') renderPlayers();
-  if (name === 'planner') renderSeasonPlanner();
+  if (name === 'planner') {
+    if (!state?.currentGW && state?.lastSync === 0) {
+      const el2 = document.getElementById('season-planner');
+      if (el2) el2.innerHTML = '<div class="empty"><span class="emoji">⏳</span>Syncing... please wait</div>';
+      setTimeout(() => switchView('planner', document.querySelector('[data-view="planner"]')), 800);
+      return;
+    }
+    renderSeasonPlanner();
+  }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -509,6 +538,7 @@ function startCountdown() {
 /* ========== RENDER ALL ========== */
 function renderAll() {
   renderHeader();
+  renderGWGlanceBanner();
   renderSquad();
   renderStats();
   renderCaptainSuggestion();
@@ -520,6 +550,7 @@ function renderAll() {
   renderSeasonPlanner();
   renderHistory();
   renderPlayers();
+  updateSyncDot();
 }
 
 function renderHeader() {
@@ -527,15 +558,57 @@ function renderHeader() {
   const mine = state.familyData?.find(f => f.id === teamId);
   const histCurrent = mine?.history?.current || [];
   const latest = histCurrent[histCurrent.length - 1];
-  const totalPts = latest?.total_points || 0;
-  const overallRank = latest?.overall_rank || 0;
-
   document.getElementById('hdr-manager').textContent = state.managerName || '—';
-  document.getElementById('hdr-points').textContent = totalPts || '—';
-  document.getElementById('hdr-rank').textContent = fmtRank(overallRank);
+  document.getElementById('hdr-points').textContent = latest?.total_points || '—';
+  document.getElementById('hdr-rank').textContent = fmtRank(latest?.overall_rank || 0);
   document.getElementById('hdr-bank').textContent = fmt(state.bank);
   document.getElementById('hdr-value').textContent = fmt(squadValue);
   document.getElementById('hdr-ft').textContent = state.freeTransfers;
+}
+
+function renderGWGlanceBanner() {
+  const el = document.getElementById('gw-glance-banner');
+  if (!el) return;
+  const mine = state.familyData?.find(f => f.id === teamId);
+  const current = mine?.history?.current || [];
+  if (!current.length) { el.innerHTML = ''; return; }
+  const latest = current[current.length - 1];
+
+  // Best/worst performers this GW
+  const withLive = state.players.map(p => {
+    const live = liveDataCache[state.currentGW]?.[p.fplId];
+    const pts = live?.stats?.total_points ?? p.gwPoints ?? 0;
+    return { name: p.name, pts, pos: p.pos };
+  });
+  withLive.sort((a, b) => b.pts - a.pts);
+  const best = withLive[0];
+  const worst = withLive[withLive.length - 1];
+  const capPts = state.players.find(p => p.captain);
+
+  el.innerHTML = `
+    <div class="gw-glance-banner">
+      <div class="glance-stat">
+        <div class="label">This GW</div>
+        <div class="value good">${latest.points} pts</div>
+        <div class="sub">Rank ${fmtRank(latest.overall_rank)}</div>
+      </div>
+      <div class="glance-stat">
+        <div class="label">🔥 Best Player</div>
+        <div class="value good">${best ? best.pts : 0}</div>
+        <div class="sub">${best ? escapeHtml(best.name) : '—'}</div>
+      </div>
+      <div class="glance-stat">
+        <div class="label">💀 Worst Player</div>
+        <div class="value bad">${worst ? worst.pts : 0}</div>
+        <div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div>
+      </div>
+      <div class="glance-stat">
+        <div class="label">©️ Captain</div>
+        <div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div>
+        <div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div>
+      </div>
+    </div>
+  `;
 }
 
 function renderStats() {
@@ -549,8 +622,7 @@ function renderStats() {
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
   const latest = current[current.length - 1];
-  const gwPts = latest?.points || 0;
-  document.getElementById('stat-gwpts').textContent = gwPts || '—';
+  document.getElementById('stat-gwpts').textContent = latest?.points || '—';
   document.getElementById('stat-gwpts-sub').textContent = state.currentGW ? `GW${state.currentGW}` : 'This week';
 
   if (current.length > 0) {
@@ -560,11 +632,6 @@ function renderStats() {
     document.getElementById('stat-best-sub').textContent = `GW${best.event}`;
     document.getElementById('stat-worst').textContent = worst.points;
     document.getElementById('stat-worst-sub').textContent = `GW${worst.event}`;
-  } else {
-    document.getElementById('stat-best').textContent = '—';
-    document.getElementById('stat-best-sub').textContent = 'Season best';
-    document.getElementById('stat-worst').textContent = '—';
-    document.getElementById('stat-worst-sub').textContent = 'Season worst';
   }
 }
 
@@ -578,7 +645,6 @@ function renderCaptainSuggestion() {
   const bp = state.bootstrap;
   const elementsMap = {};
   bp.elements.forEach(e => elementsMap[e.id] = e);
-
   const candidates = state.players.map(p => {
     const el2 = elementsMap[p.fplId];
     if (!el2) return null;
@@ -589,9 +655,7 @@ function renderCaptainSuggestion() {
     const score = form * 3 + pts * 0.1 + ict * 0.05 + (minutes > 500 ? 5 : 0);
     return { name: p.name, team: p.team, pos: p.pos, price: p.price, form, pts, score, ownership: parseFloat(el2.selected_by_percent) || 0 };
   }).filter(Boolean).sort((a, b) => b.score - a.score).slice(0, 3);
-
   if (!candidates.length) { el.innerHTML = '<div class="empty">No candidates</div>'; return; }
-
   const medals = ['🥇', '🥈', '🥉'];
   el.innerHTML = candidates.map((c, i) => `
     <div class="lb-row">
@@ -603,8 +667,7 @@ function renderCaptainSuggestion() {
       <div class="lb-stat">${c.form.toFixed(1)}<small>Form</small></div>
       <div class="lb-stat">${c.pts}<small>Pts</small></div>
       <div class="lb-stat">${Math.round(c.score)}<small>Score</small></div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 function renderPriceChanges() {
@@ -620,26 +683,38 @@ function renderPriceChanges() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px">
       <div>
         <div style="font-weight:800;font-size:0.75rem;color:var(--mint);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">📈 Rising</div>
-        ${risers.map(r => `
-          <div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
-            <div><div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div><div class="lb-teamname">${fmt(r.price)}</div></div>
-            <div class="lb-stat" style="color:var(--mint);font-size:0.8rem">${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}</div>
-            <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
-          </div>
-        `).join('') || '<div style="padding:8px;color:var(--muted);font-size:0.75rem">No risers today</div>'}
+        ${risers.map(r => `<div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
+          <div><div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div><div class="lb-teamname">${fmt(r.price)}</div></div>
+          <div class="lb-stat" style="color:var(--mint);font-size:0.8rem">${r.change > 0 ? '+' : ''}${r.change.toFixed(1)}</div>
+          <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
+        </div>`).join('') || '<div style="padding:8px;color:var(--muted);font-size:0.75rem">No risers today</div>'}
       </div>
       <div>
         <div style="font-weight:800;font-size:0.75rem;color:var(--red);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px">📉 Falling</div>
-        ${fallers.map(r => `
-          <div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
-            <div><div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div><div class="lb-teamname">${fmt(r.price)}</div></div>
-            <div class="lb-stat" style="color:var(--red);font-size:0.8rem">${r.change.toFixed(1)}</div>
-            <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
-          </div>
-        `).join('') || '<div style="padding:8px;color:var(--muted);font-size:0.75rem">No fallers today</div>'}
+        ${fallers.map(r => `<div class="lb-row" style="grid-template-columns:1fr 70px 80px;padding:8px 10px">
+          <div><div class="lb-name" style="font-size:0.85rem">${escapeHtml(r.name)}</div><div class="lb-teamname">${fmt(r.price)}</div></div>
+          <div class="lb-stat" style="color:var(--red);font-size:0.8rem">${r.change.toFixed(1)}</div>
+          <div class="lb-stat" style="font-size:0.72rem">${formatTransfers(r.netTransfers)}<small>Net</small></div>
+        </div>`).join('') || '<div style="padding:8px;color:var(--muted);font-size:0.75rem">No fallers today</div>'}
       </div>
-    </div>
-  `;
+    </div>`;
+}
+
+function renderPlayerMarks(p) {
+  const live = liveDataCache[state.currentGW]?.[p.fplId];
+  if (!live || !live.stats) return '';
+  const s = live.stats;
+  const marks = [];
+  if (s.goals_scored) marks.push(`<span class="player-mark">⚽ ${s.goals_scored}</span>`);
+  if (s.assists) marks.push(`<span class="player-mark">👟 ${s.assists}</span>`);
+  if (s.bonus) marks.push(`<span class="player-mark neutral">🅱️ ${s.bonus}</span>`);
+  if (s.clean_sheets && (p.pos === 'GK' || p.pos === 'DEF')) marks.push(`<span class="player-mark">🛡️</span>`);
+  if (s.yellow_cards) marks.push(`<span class="player-mark neg">🟨</span>`);
+  if (s.red_cards) marks.push(`<span class="player-mark neg">🟥</span>`);
+  if (s.saves >= 3) marks.push(`<span class="player-mark neutral">🧤 ${s.saves}</span>`);
+  if (s.defensive_contribution && s.defensive_contribution >= 10) marks.push(`<span class="player-mark">🛡️ DC</span>`);
+  if (!marks.length) return '';
+  return `<div class="player-marks">${marks.join('')}</div>`;
 }
 
 function renderSquad() {
@@ -669,8 +744,10 @@ function renderSquad() {
     const isRecommendedCap = bestCap && p.id === bestCap.id;
     const teamBadge = p.teamId ? `${BADGE_BASE}/${p.teamId}.svg` : '';
     const injury = p.status && p.status !== 'a';
+    const live = liveDataCache[state.currentGW]?.[p.fplId];
+    const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
     return `
-      <div class="player-card ${p.bench ? 'bench' : ''} ${p.captain ? 'captain-card' : ''}" data-pos="${p.pos}" onclick="openPlayerModal('${p.id}')">
+      <div class="player-card ${p.bench ? 'bench' : ''} ${p.captain ? 'captain-card' : ''}" data-pos="${p.pos}" onclick="openPerfModal('${p.id}')">
         ${p.captain ? '<div class="captain-badge">C</div>' : ''}
         ${p.vice ? '<div class="vc-badge">V</div>' : ''}
         ${injury ? '<div class="injury-warn" title="' + escapeHtml(p.news || 'Injury doubt') + '">⚠️</div>' : ''}
@@ -678,10 +755,11 @@ function renderSquad() {
         <div class="name"><span>${escapeHtml(p.name)}</span><span class="pos-badge" data-pos="${p.pos}">${p.pos}</span></div>
         <div class="meta"><span class="price-tag">${fmt(p.price)}</span><span style="display:flex;align-items:center;gap:4px">${teamBadge ? `<img src="${teamBadge}" style="width:14px;height:14px" onerror="this.style.display='none'">` : ''}${escapeHtml(p.team)}</span></div>
         <div class="player-stats">
-          <div class="player-stat"><div class="stat-val">${p.gwPoints || 0}</div><div class="stat-lbl">GW</div></div>
+          <div class="player-stat"><div class="stat-val">${livePts}</div><div class="stat-lbl">GW</div></div>
           <div class="player-stat"><div class="stat-val">${p.totalPoints || 0}</div><div class="stat-lbl">Total</div></div>
           <div class="player-stat"><div class="stat-val">${(p.form || 0).toFixed(1)}</div><div class="stat-lbl">Form</div></div>
         </div>
+        ${renderPlayerMarks(p)}
         ${isRecommendedCap && !p.captain ? '<div style="font-size:0.6rem;color:var(--gold);margin-top:6px;font-weight:800">⭐ Cap pick</div>' : ''}
         ${p.bench ? '<div class="bench-label">Bench</div>' : ''}
         <button class="remove-btn" onclick="event.stopPropagation(); removePlayer('${p.id}')">✕</button>
@@ -717,7 +795,7 @@ function renderTimeline() {
   t.innerHTML = html;
 }
 
-/* ========== MINI PLANNER (Dashboard) ========== */
+/* ========== MINI PLANNER ========== */
 function renderMiniPlans() {
   const el = document.getElementById('mini-plans');
   if (!el) return;
@@ -725,29 +803,23 @@ function renderMiniPlans() {
     el.innerHTML = '<div class="empty"><span class="emoji">🔄</span>Sync to load your planner</div>';
     return;
   }
-  // Show last current GW + next 2
   const current = state.currentGW;
   const gwsToShow = [current, current + 1, current + 2].filter(gw => gw <= 38);
-
-  const html = gwsToShow.map(gw => {
+  el.innerHTML = gwsToShow.map(gw => {
     const plan = state.plans.find(p => p.gw === gw);
     const status = getGWStatus(gw);
     const summary = buildGWSummary(plan, status);
-    const statusClass = status;
     const statusLabel = status === 'past' ? '✅ Done' : status === 'current' ? '🔥 Now' : '⏳ Next';
     return `
-      <div class="mini-plan-row ${statusClass}" onclick="openPlanModal('${plan?.id || ''}', ${gw})">
+      <div class="mini-plan-row ${status}" onclick="openPlanModal('${plan?.id || ''}', ${gw})">
         <div class="mini-plan-gw">GW${gw}</div>
         <div class="mini-plan-info">${summary}</div>
-        <div class="mini-plan-status ${statusClass}">${statusLabel}</div>
-      </div>
-    `;
+        <div class="mini-plan-status ${status}">${statusLabel}</div>
+      </div>`;
   }).join('');
-
-  el.innerHTML = html;
 }
 
-function buildGWSummary(plan, status) {
+function buildGWSummary(plan) {
   const parts = [];
   if (plan) {
     if (plan.outName || plan.inName) parts.push(`<span class="mini-plan-tag transfer">⬆${escapeHtml(plan.outName || '?')} ⬇${escapeHtml(plan.inName || '?')}</span>`);
@@ -758,38 +830,34 @@ function buildGWSummary(plan, status) {
   return parts.join('');
 }
 
-/* ========== SEASON PLANNER (Full) ========== */
-function renderSeasonPlanner() {
+/* ========== SEASON PLANNER ========== */
+function renderSeasonPlanner(retryCount = 0) {
   const el = document.getElementById('season-planner');
-  const statusBar = document.getElementById('planner-status-bar');
   if (!el) return;
 
   if (!state.currentGW) {
-    el.innerHTML = '<div class="empty"><span class="emoji">🗓</span>Sync to load the season planner</div>';
+    if (retryCount < 5) {
+      el.innerHTML = '<div class="empty"><span class="emoji">⏳</span>Syncing... please wait (' + (retryCount + 1) + '/5)</div>';
+      setTimeout(() => renderSeasonPlanner(retryCount + 1), 1500);
+    } else {
+      el.innerHTML = '<div class="empty"><span class="emoji">🗓</span>Sync from Dashboard to load the season planner</div>';
+    }
     return;
   }
 
-  // Update status bar
-  const chipsUsed = (state.familyData?.find(f => f.id === teamId)?.history?.current || [])
-    .filter(g => g.active_chip).length || 0;
-  const totalChips = 4;
+  const chipsUsed = (state.familyData?.find(f => f.id === teamId)?.history?.current || []).filter(g => g.active_chip).length || 0;
   const plannedTransfers = state.plans.filter(p => (p.outName && p.inName) && p.gw >= state.currentGW).length;
-
   document.getElementById('pl-status-bank').textContent = fmt(state.bank);
   document.getElementById('pl-status-value').textContent = fmt(state.players.reduce((s, p) => s + p.price, 0));
-  document.getElementById('pl-status-chips').textContent = (totalChips - chipsUsed) + ' / ' + totalChips;
+  document.getElementById('pl-status-chips').textContent = (4 - chipsUsed) + ' / 4';
   document.getElementById('pl-status-transfers').textContent = plannedTransfers;
 
   const current = state.currentGW;
-
-  // Render all 38 GWs
   let html = '';
   for (let gw = 1; gw <= 38; gw++) {
     const status = getGWStatus(gw);
     const plan = state.plans.find(p => p.gw === gw);
     const isOpen = openAccordions[gw] || false;
-
-    // Build summary pills
     const summaryParts = buildGWSummary(plan, status);
     const statusLabel = status === 'past' ? '✅ Done' : status === 'current' ? '🔥 This Week' : '⏳ Upcoming';
     const result = gwResultCache[gw];
@@ -811,18 +879,14 @@ function renderSeasonPlanner() {
             ${renderGWAccordionBody(gw, plan, status)}
           </div>
         </div>
-      </div>
-    `;
+      </div>`;
   }
   el.innerHTML = html;
 
-  // If any past GWs need result data, fetch them async
   if (state.familyData) {
     for (let gw = 1; gw < current; gw++) {
       if (!gwResultCache[gw]) {
-        fetchGWResult(gw).then(r => {
-          if (r) updateGWPastSummary(gw, r);
-        });
+        fetchGWResult(gw).then(r => { if (r) updateGWPastSummary(gw, r); });
       }
     }
   }
@@ -833,36 +897,23 @@ async function updateGWPastSummary(gw, result) {
   if (!el) return;
   const summaryBox = el.querySelector('.gw-acc-summary');
   if (!summaryBox) return;
-  // Remove old past summary if any
   const existing = summaryBox.querySelector('.gw-acc-pill.captain.result');
   if (existing) existing.remove();
-  // Insert new one
   const newPill = document.createElement('span');
   newPill.className = 'gw-acc-pill captain result';
   newPill.innerHTML = `${result.points} pts`;
   summaryBox.insertBefore(newPill, summaryBox.firstChild);
-
-  // Also re-render the body if it's open
   if (openAccordions[gw]) {
     const bodyEl = document.getElementById(`gw-body-${gw}`);
-    if (bodyEl) {
-      const plan = state.plans.find(p => p.gw === gw);
-      bodyEl.innerHTML = renderGWAccordionBody(gw, plan, 'past');
-    }
+    if (bodyEl) bodyEl.innerHTML = renderGWAccordionBody(gw, state.plans.find(p => p.gw === gw), 'past');
   }
 }
 
 function renderGWAccordionBody(gw, plan, status) {
-  const current = state.currentGW;
   const isPast = status === 'past';
   const result = gwResultCache[gw];
+  if (isPast) return renderPastGWBody(gw, plan, result);
 
-  // Predicted vs Actual for past GWs
-  if (isPast) {
-    return renderPastGWBody(gw, plan, result);
-  }
-
-  // For current/upcoming — full plan editor
   const fixtures = fixturesCache[gw] || [];
   const myPlayers = myPlayersInFixtures(fixtures);
 
@@ -871,104 +922,65 @@ function renderGWAccordionBody(gw, plan, status) {
     const net = (Number(plan.inPrice) || 0) - (Number(plan.outPrice) || 0);
     const netStr = net === 0 ? '£0.0m' : (net > 0 ? '+' : '') + fmt(net);
     const hasTransfer = plan.outName || plan.inName;
-
     planHtml = `
       <div class="gw-plan-content">
-        ${hasTransfer ? `
-          <div class="plan-body">
-            <div class="transfer-side out">
-              <div class="side-label">⬆ Out</div>
-              <div class="transfer-player">${escapeHtml(plan.outName || '—')}</div>
-              <div class="transfer-price">${fmt(plan.outPrice)}</div>
-            </div>
-            <div class="transfer-side in">
-              <div class="side-label">⬇ In</div>
-              <div class="transfer-player">${escapeHtml(plan.inName || '—')}</div>
-              <div class="transfer-price">${fmt(plan.inPrice)}</div>
-            </div>
-          </div>
-        ` : ''}
-
+        ${hasTransfer ? `<div class="plan-body">
+          <div class="transfer-side out"><div class="side-label">⬆ Out</div><div class="transfer-player">${escapeHtml(plan.outName || '—')}</div><div class="transfer-price">${fmt(plan.outPrice)}</div></div>
+          <div class="transfer-side in"><div class="side-label">⬇ In</div><div class="transfer-player">${escapeHtml(plan.inName || '—')}</div><div class="transfer-price">${fmt(plan.inPrice)}</div></div>
+        </div>` : ''}
         <div class="plan-extras">
           ${plan.captain ? `<div class="plan-extra"><span class="extra-label">👑 Captain</span><span class="extra-value">${escapeHtml(plan.captain)}</span></div>` : ''}
           ${plan.vice ? `<div class="plan-extra"><span class="extra-label">🎗️ Vice</span><span class="extra-value">${escapeHtml(plan.vice)}</span></div>` : ''}
           ${plan.chip ? `<div class="plan-extra"><span class="extra-label">Chip</span><span class="extra-value">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span></div>` : ''}
           ${plan.ftAfter !== null && plan.ftAfter !== undefined && plan.ftAfter !== '' ? `<div class="plan-extra"><span class="extra-label">🔄 FT after</span><span class="extra-value">${plan.ftAfter}</span></div>` : ''}
         </div>
-
         ${plan.note ? `<div class="plan-note">📝 ${escapeHtml(plan.note)}</div>` : ''}
-
         ${hasTransfer ? `<div class="plan-footer"><span>Net cost: <strong>${netStr}</strong></span></div>` : ''}
-      </div>
-    `;
+      </div>`;
   } else {
-    planHtml = `<div class="gw-empty-plan">No plan yet for GW${gw}. <br><button class="btn small primary" style="margin-top:10px" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button></div>`;
+    planHtml = `<div class="gw-empty-plan">No plan yet for GW${gw}.<br><button class="btn small primary" style="margin-top:10px" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button></div>`;
   }
 
-  // Fixtures preview (compact)
   let fixturesHtml = '';
   if (myPlayers.length) {
-    fixturesHtml = `
-      <div class="plan-fixtures">
-        <div class="plan-fixtures-title">⚽ Your players this GW</div>
-        ${myPlayers.slice(0, 12).map(mp => `
-          <div class="plan-fixture-row">
-            <img src="${BADGE_BASE}/${mp.teamId}.svg" onerror="this.style.display='none'">
-            <span class="opp">${escapeHtml(mp.player)}</span>
-            <span style="color:var(--muted);font-size:0.72rem">${mp.home ? 'vs' : '@'} ${escapeHtml(mp.opp.short)}</span>
-            <span class="fixture-diff diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
-          </div>
-        `).join('')}
-      </div>
-    `;
+    fixturesHtml = `<div class="plan-fixtures"><div class="plan-fixtures-title">⚽ Your players this GW</div>
+      ${myPlayers.slice(0, 12).map(mp => `<div class="plan-fixture-row">
+        <img src="${BADGE_BASE}/${mp.teamId}.svg" onerror="this.style.display='none'">
+        <span class="opp">${escapeHtml(mp.player)}</span>
+        <span style="color:var(--muted);font-size:0.72rem">${mp.home ? 'vs' : '@'} ${escapeHtml(mp.opp.short)}</span>
+        <span class="fixture-diff diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
+      </div>`).join('')}</div>`;
   }
 
-  const actionsHtml = `
-    <div class="gw-plan-actions">
-      ${plan ? `<button class="btn small" onclick="openPlanModal('${plan.id}')">✏️ Edit</button>` : ''}
-      ${plan ? `<button class="btn small danger" onclick="removePlan('${plan.id}')">🗑 Delete</button>` : ''}
-      ${!plan ? `<button class="btn small primary" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button>` : ''}
-    </div>
-  `;
-
+  const actionsHtml = `<div class="gw-plan-actions">
+    ${plan ? `<button class="btn small" onclick="openPlanModal('${plan.id}')">✏️ Edit</button>` : ''}
+    ${plan ? `<button class="btn small danger" onclick="removePlan('${plan.id}')">🗑 Delete</button>` : ''}
+    ${!plan ? `<button class="btn small primary" onclick="openPlanModal(null, ${gw})">＋ Add Plan</button>` : ''}
+  </div>`;
   return planHtml + fixturesHtml + actionsHtml;
 }
 
 function renderPastGWBody(gw, plan, result) {
-  const pred = plan ? `
-    <div class="gw-compare-col predicted">
-      <h5>📋 You Planned</h5>
-      ${plan.outName || plan.inName ? `<div class="gw-compare-line"><span class="label">Transfer</span><span class="value">⬆${escapeHtml(plan.outName || '?')} ⬇${escapeHtml(plan.inName || '?')}</span></div>` : ''}
-      ${plan.captain ? `<div class="gw-compare-line"><span class="label">Captain</span><span class="value">👑 ${escapeHtml(plan.captain)}</span></div>` : ''}
-      ${plan.vice ? `<div class="gw-compare-line"><span class="label">Vice</span><span class="value">🎗️ ${escapeHtml(plan.vice)}</span></div>` : ''}
-      ${plan.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span></div>` : ''}
-      ${plan.note ? `<div class="gw-compare-line"><span class="label">Note</span><span class="value" style="font-style:italic">${escapeHtml(plan.note)}</span></div>` : ''}
-      ${!plan.outName && !plan.inName && !plan.captain && !plan.chip ? '<div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded</div>' : ''}
-    </div>
-  ` : `
-    <div class="gw-compare-col predicted">
-      <h5>📋 You Planned</h5>
-      <div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded for GW${gw}</div>
-    </div>
-  `;
+  const pred = plan ? `<div class="gw-compare-col predicted">
+    <h5>📋 You Planned</h5>
+    ${plan.outName || plan.inName ? `<div class="gw-compare-line"><span class="label">Transfer</span><span class="value">⬆${escapeHtml(plan.outName || '?')} ⬇${escapeHtml(plan.inName || '?')}</span></div>` : ''}
+    ${plan.captain ? `<div class="gw-compare-line"><span class="label">Captain</span><span class="value">👑 ${escapeHtml(plan.captain)}</span></div>` : ''}
+    ${plan.vice ? `<div class="gw-compare-line"><span class="label">Vice</span><span class="value">🎗️ ${escapeHtml(plan.vice)}</span></div>` : ''}
+    ${plan.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span></div>` : ''}
+    ${plan.note ? `<div class="gw-compare-line"><span class="label">Note</span><span class="value" style="font-style:italic">${escapeHtml(plan.note)}</span></div>` : ''}
+    ${!plan.outName && !plan.inName && !plan.captain && !plan.chip ? '<div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded</div>' : ''}
+  </div>` : `<div class="gw-compare-col predicted"><h5>📋 You Planned</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded for GW${gw}</div></div>`;
 
-  const actual = result ? `
-    <div class="gw-compare-col actual">
-      <h5>✅ Actual Result</h5>
-      <div class="gw-compare-line"><span class="label">Points</span><span class="value" style="color:var(--mint)">${result.points}</span></div>
-      <div class="gw-compare-line"><span class="label">Overall Rank</span><span class="value">${fmtRank(result.rank)}</span></div>
-      <div class="gw-compare-line"><span class="label">Captain</span><span class="value">👑 ${escapeHtml(result.captain)}</span></div>
-      <div class="gw-compare-line"><span class="label">Transfers</span><span class="value">${result.transfers}${result.transferCost ? ` (-${result.transferCost} pts)` : ''}</span></div>
-      ${result.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI[result.chip]} ${CHIP_NAME[result.chip]}</span></div>` : ''}
-      <div class="gw-compare-line"><span class="label">Bank</span><span class="value">${fmt(result.bank)}</span></div>
-      <div class="gw-compare-line"><span class="label">Value</span><span class="value">${fmt(result.value)}</span></div>
-    </div>
-  ` : `
-    <div class="gw-compare-col actual">
-      <h5>✅ Actual Result</h5>
-      <div style="color:var(--muted);font-size:0.75rem;font-style:italic">Loading...</div>
-    </div>
-  `;
+  const actual = result ? `<div class="gw-compare-col actual">
+    <h5>✅ Actual Result</h5>
+    <div class="gw-compare-line"><span class="label">Points</span><span class="value" style="color:var(--mint)">${result.points}</span></div>
+    <div class="gw-compare-line"><span class="label">Overall Rank</span><span class="value">${fmtRank(result.rank)}</span></div>
+    <div class="gw-compare-line"><span class="label">Captain</span><span class="value">👑 ${escapeHtml(result.captain)}</span></div>
+    <div class="gw-compare-line"><span class="label">Transfers</span><span class="value">${result.transfers}${result.transferCost ? ` (-${result.transferCost} pts)` : ''}</span></div>
+    ${result.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI[result.chip]} ${CHIP_NAME[result.chip]}</span></div>` : ''}
+    <div class="gw-compare-line"><span class="label">Bank</span><span class="value">${fmt(result.bank)}</span></div>
+    <div class="gw-compare-line"><span class="label">Value</span><span class="value">${fmt(result.value)}</span></div>
+  </div>` : `<div class="gw-compare-col actual"><h5>✅ Actual Result</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">Loading...</div></div>`;
 
   return `<div class="gw-compare">${pred}${actual}</div>`;
 }
@@ -977,19 +989,14 @@ function toggleAccordion(gw) {
   openAccordions[gw] = !openAccordions[gw];
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"]`);
   if (el) el.classList.toggle('open', openAccordions[gw]);
-
-  // If opening a past GW and we don't have its result, fetch it
   if (openAccordions[gw] && getGWStatus(gw) === 'past' && !gwResultCache[gw]) {
     const bodyEl = document.getElementById(`gw-body-${gw}`);
     if (bodyEl) bodyEl.innerHTML = renderPastGWBody(gw, state.plans.find(p => p.gw === gw), null);
     fetchGWResult(gw).then(r => {
-      if (r && bodyEl) {
-        bodyEl.innerHTML = renderPastGWBody(gw, state.plans.find(p => p.gw === gw), r);
-      }
+      if (r && bodyEl) bodyEl.innerHTML = renderPastGWBody(gw, state.plans.find(p => p.gw === gw), r);
     });
   }
 }
-
 function expandAllPlans() {
   for (let gw = 1; gw <= 38; gw++) openAccordions[gw] = true;
   document.querySelectorAll('.gw-accordion').forEach(el => el.classList.add('open'));
@@ -1012,18 +1019,13 @@ function renderMiniLeaderboard() {
     const latest = hist[hist.length - 1];
     return { id: m.id, name: m.name, emoji: m.emoji || '', teamName: m.entry?.name || '', totalPts: latest?.total_points || 0, gwPts: latest?.points || 0 };
   }).sort((a, b) => b.totalPts - a.totalPts);
-
   wrap.innerHTML = rows.map((r, i) => `
     <div class="lb-row mini ${r.id === teamId ? 'me' : ''}" onclick="switchView('leaderboard', document.querySelector('[data-view=leaderboard]'))">
       <div class="lb-rank">${RANK_EMOJI[i] || (i + 1)}</div>
-      <div>
-        <div class="lb-name">${r.emoji} ${escapeHtml(r.name)} ${r.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div>
-        <div class="lb-teamname">${escapeHtml(r.teamName)}</div>
-      </div>
+      <div><div class="lb-name">${r.emoji} ${escapeHtml(r.name)} ${r.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div><div class="lb-teamname">${escapeHtml(r.teamName)}</div></div>
       <div class="lb-stat">${r.totalPts}<small>Total</small></div>
       <div class="lb-stat">${r.gwPts}<small>GW</small></div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
 /* ========== FAMILY LEAGUE ========== */
@@ -1045,10 +1047,7 @@ function renderWeeklyRoast() {
     return;
   }
   const lines = buildRoastLines();
-  el.innerHTML = `
-    <div class="roast-title">🔥 WEEKLY ROAST — GW${state.currentGW || '?'}</div>
-    ${lines.map(l => `<div class="roast-line">${l}</div>`).join('')}
-  `;
+  el.innerHTML = `<div class="roast-title">🔥 WEEKLY ROAST — GW${state.currentGW || '?'}</div>${lines.map(l => `<div class="roast-line">${l}</div>`).join('')}`;
 }
 
 function buildRoastLines() {
@@ -1077,30 +1076,21 @@ function buildRoastLines() {
 function renderMainLeaderboard() {
   const card = document.getElementById('leaderboard-card');
   if (!card) return;
-  if (!state.familyData || !state.familyData.length) {
-    card.innerHTML = '<div class="empty"><span class="emoji">🏆</span>Sync to load standings</div>';
-    return;
-  }
+  if (!state.familyData || !state.familyData.length) { card.innerHTML = '<div class="empty"><span class="emoji">🏆</span>Sync to load standings</div>'; return; }
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
     const latest = hist[hist.length - 1];
     return { ...m, totalPts: latest?.total_points || 0, gwPts: latest?.points || 0, overallRank: latest?.overall_rank || 0 };
   }).sort((a, b) => b.totalPts - a.totalPts);
-
   card.innerHTML = rows.map((r, i) => {
     const mood = calcMood(r);
-    return `
-      <div class="lb-row ${r.id === teamId ? 'me' : ''}">
-        <div class="lb-rank">${RANK_EMOJI[i] || (i + 1)}</div>
-        <div>
-          <div class="lb-name">${r.emoji || ''} ${escapeHtml(r.name)} ${r.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''} ${MOOD_EMOJI[mood] || ''}</div>
-          <div class="lb-teamname">${escapeHtml(r.entry?.name || '')}</div>
-        </div>
-        <div class="lb-stat">${r.totalPts}<small>Total</small></div>
-        <div class="lb-stat">${r.gwPts}<small>GW</small></div>
-        <div class="lb-stat">${fmtRank(r.overallRank)}<small>Rank</small></div>
-      </div>
-    `;
+    return `<div class="lb-row ${r.id === teamId ? 'me' : ''}">
+      <div class="lb-rank">${RANK_EMOJI[i] || (i + 1)}</div>
+      <div><div class="lb-name">${r.emoji || ''} ${escapeHtml(r.name)} ${r.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''} ${MOOD_EMOJI[mood] || ''}</div><div class="lb-teamname">${escapeHtml(r.entry?.name || '')}</div></div>
+      <div class="lb-stat">${r.totalPts}<small>Total</small></div>
+      <div class="lb-stat">${r.gwPts}<small>GW</small></div>
+      <div class="lb-stat">${fmtRank(r.overallRank)}<small>Rank</small></div>
+    </div>`;
   }).join('');
 }
 
@@ -1120,81 +1110,58 @@ function calcMood(row) {
 function renderBestGW() {
   const card = document.getElementById('best-gw-card');
   if (!card) return;
-  if (!state.familyData || !state.familyData.length) {
-    card.innerHTML = '<div class="empty"><span class="emoji">🔥</span>Sync to load</div>';
-    return;
-  }
+  if (!state.familyData || !state.familyData.length) { card.innerHTML = '<div class="empty"><span class="emoji">🔥</span>Sync to load</div>'; return; }
   const entries = state.familyData.map(m => {
     const hist = m.history?.current || [];
     if (!hist.length) return null;
     const best = hist.reduce((mx, g) => g.points > mx.points ? g : mx, hist[0]);
     return { id: m.id, name: m.name, emoji: m.emoji, teamName: m.entry?.name || '', points: best.points, gw: best.event, chip: best.active_chip || null };
   }).filter(Boolean).sort((a, b) => b.points - a.points);
-
   const medals = ['🥇', '🥈', '🥉'];
   const tailEmoji = ['😴', '🐌'];
   card.innerHTML = entries.map((e, i) => {
     const medal = medals[i] || tailEmoji[i - 3] || '·';
     const chipLabel = e.chip ? `${CHIP_EMOJI[e.chip] || ''} ${CHIP_NAME[e.chip] || e.chip}` : '— no chip';
     const quote = e.points >= 60 ? randomQuote(ROAST_BEST) : '';
-    return `
-      <div class="lb-row ${e.id === teamId ? 'me' : ''}">
-        <div class="lb-rank">${medal}</div>
-        <div>
-          <div class="lb-name">${e.emoji || ''} ${escapeHtml(e.name)} ${e.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div>
-          <div class="lb-teamname">${escapeHtml(e.teamName)}</div>
-          ${quote ? `<div class="lb-quote">"${quote}"</div>` : ''}
-        </div>
-        <div class="lb-stat">${e.points} pts<small>Best</small></div>
-        <div class="lb-stat">GW${e.gw}<small>When</small></div>
-        <div class="lb-stat" style="font-size:0.72rem">${chipLabel}<small>Chip</small></div>
-      </div>
-    `;
+    return `<div class="lb-row ${e.id === teamId ? 'me' : ''}">
+      <div class="lb-rank">${medal}</div>
+      <div><div class="lb-name">${e.emoji || ''} ${escapeHtml(e.name)} ${e.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div><div class="lb-teamname">${escapeHtml(e.teamName)}</div>${quote ? `<div class="lb-quote">"${quote}"</div>` : ''}</div>
+      <div class="lb-stat">${e.points} pts<small>Best</small></div>
+      <div class="lb-stat">GW${e.gw}<small>When</small></div>
+      <div class="lb-stat" style="font-size:0.72rem">${chipLabel}<small>Chip</small></div>
+    </div>`;
   }).join('');
 }
 
 function renderWorstGW() {
   const card = document.getElementById('worst-gw-card');
   if (!card) return;
-  if (!state.familyData || !state.familyData.length) {
-    card.innerHTML = '<div class="empty"><span class="emoji">❄️</span>Sync to load</div>';
-    return;
-  }
+  if (!state.familyData || !state.familyData.length) { card.innerHTML = '<div class="empty"><span class="emoji">❄️</span>Sync to load</div>'; return; }
   const entries = state.familyData.map(m => {
     const hist = m.history?.current || [];
     if (!hist.length) return null;
     const worst = hist.reduce((mn, g) => g.points < mn.points ? g : mn, hist[0]);
     return { id: m.id, name: m.name, emoji: m.emoji, teamName: m.entry?.name || '', points: worst.points, gw: worst.event };
   }).filter(Boolean).sort((a, b) => b.points - a.points);
-
   const medals = ['🥇', '🥈', '🥉'];
   card.innerHTML = entries.map((e, i) => {
     const medal = medals[i] || (i === entries.length - 1 ? '🗑️' : '·');
     const shame = SHAME_EMOJI(e.points);
     const quote = randomQuote(ROAST_WORST);
-    return `
-      <div class="lb-row ${e.id === teamId ? 'me' : ''}">
-        <div class="lb-rank">${medal}</div>
-        <div>
-          <div class="lb-name">${e.emoji || ''} ${escapeHtml(e.name)} ${e.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div>
-          <div class="lb-teamname">${escapeHtml(e.teamName)}</div>
-          <div class="lb-quote">"${quote}"</div>
-        </div>
-        <div class="lb-stat">${e.points} pts<small>Worst</small></div>
-        <div class="lb-stat">GW${e.gw}<small>When</small></div>
-        <div class="lb-stat">${shame}<small>Shame</small></div>
-      </div>
-    `;
+    return `<div class="lb-row ${e.id === teamId ? 'me' : ''}">
+      <div class="lb-rank">${medal}</div>
+      <div><div class="lb-name">${e.emoji || ''} ${escapeHtml(e.name)} ${e.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div><div class="lb-teamname">${escapeHtml(e.teamName)}</div><div class="lb-quote">"${quote}"</div></div>
+      <div class="lb-stat">${e.points} pts<small>Worst</small></div>
+      <div class="lb-stat">GW${e.gw}<small>When</small></div>
+      <div class="lb-stat">${shame}<small>Shame</small></div>
+    </div>`;
   }).join('');
 }
 
 function renderTrophyCabinet() {
   const el = document.getElementById('trophy-cabinet');
   if (!el) return;
-  if (!state.familyData || !state.familyData.length) {
-    el.innerHTML = '<div class="empty"><span class="emoji">🏅</span>Sync to load</div>';
-    return;
-  }
+  if (!state.familyData || !state.familyData.length) { el.innerHTML = '<div class="empty"><span class="emoji">🏅</span>Sync to load</div>'; return; }
   const gwWinners = {};
   state.familyData.forEach(m => {
     const hist = m.history?.current || [];
@@ -1209,12 +1176,8 @@ function renderTrophyCabinet() {
   el.innerHTML = `<div class="trophy-grid">${list.map(w => `
     <div class="trophy-item">
       <div class="trophy-gw">GW${w.event}</div>
-      <div class="trophy-info">
-        <div class="trophy-name">👑 ${w.emoji || ''} ${escapeHtml(w.name.split(' ')[0])}</div>
-        <div class="trophy-detail">${w.points} pts${w.chip ? ' · ' + (CHIP_EMOJI[w.chip] || '') : ''}</div>
-      </div>
-    </div>
-  `).join('')}</div>`;
+      <div class="trophy-info"><div class="trophy-name">👑 ${w.emoji || ''} ${escapeHtml(w.name.split(' ')[0])}</div><div class="trophy-detail">${w.points} pts${w.chip ? ' · ' + (CHIP_EMOJI[w.chip] || '') : ''}</div></div>
+    </div>`).join('')}</div>`;
 }
 
 async function fetchAllCaptainPicks() {
@@ -1228,7 +1191,6 @@ async function fetchAllCaptainPicks() {
   const gwNums = [];
   for (let gw = 1; gw <= currentGW; gw++) gwNums.push(gw);
   await Promise.all(gwNums.map(gw => fetchLiveGW(gw)));
-
   for (const m of FAMILY) {
     const seasonPicks = [];
     const picksByGW = await Promise.all(gwNums.map(gw => fpl(`/entry/${m.id}/event/${gw}/picks/`).catch(() => null)));
@@ -1261,43 +1223,27 @@ async function renderCaptainPicks() {
     bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>Sync to load</div>';
     return;
   }
-  worstEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Scanning full season...</div>';
-  bestEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Scanning full season...</div>';
-
+  worstEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Scanning...</div>';
+  bestEl.innerHTML = '<div class="empty" style="padding:16px;font-size:0.75rem"><span class="emoji">⏳</span>Scanning...</div>';
   let allCaptains;
-  try { allCaptains = await fetchAllCaptainPicks(); }
-  catch (e) {
-    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>Could not load</div>';
-    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>Could not load</div>';
-    return;
-  }
-
+  try { allCaptains = await fetchAllCaptainPicks(); } catch (e) { return; }
   const perManager = allCaptains.map(m => {
     if (!m.seasonPicks.length) return null;
     const sorted = [...m.seasonPicks].sort((a, b) => b.points - a.points);
     return { id: m.id, name: m.name, emoji: m.emoji, best: sorted[0], worst: sorted[sorted.length - 1] };
   }).filter(Boolean);
-
-  if (!perManager.length) {
-    worstEl.innerHTML = '<div class="empty"><span class="emoji">💀</span>No data</div>';
-    bestEl.innerHTML = '<div class="empty"><span class="emoji">👑</span>No data</div>';
-    return;
-  }
-
+  if (!perManager.length) return;
   const worstList = [...perManager].sort((a, b) => a.worst.points - b.worst.points);
   const bestList = [...perManager].sort((a, b) => b.best.points - a.best.points);
-
   const renderRow = (row, pick, type) => {
     const emoji = type === 'worst' ? SHAME_EMOJI(pick.points) : (pick.points >= 20 ? '🚀' : pick.points >= 14 ? '🔥' : pick.points >= 10 ? '📈' : '👍');
     const color = type === 'worst' ? 'var(--red)' : 'var(--gold)';
-    return `
-      <div class="shame-item">
-        <div class="shame-gw" style="${type === 'best' ? 'color:var(--gold)' : ''}">GW${pick.gw}</div>
-        <div class="shame-player">© ${escapeHtml(pick.player)} <span class="pos-badge" data-pos="${pick.pos}" style="font-size:0.5rem">${pick.pos}</span></div>
-        <div class="shame-pts" style="color:${color}">${pick.points} pts ${emoji}</div>
-        <div class="shame-manager">${row.emoji || ''} ${escapeHtml(row.name.split(' ')[0])}</div>
-      </div>
-    `;
+    return `<div class="shame-item">
+      <div class="shame-gw" style="${type === 'best' ? 'color:var(--gold)' : ''}">GW${pick.gw}</div>
+      <div class="shame-player">© ${escapeHtml(pick.player)} <span class="pos-badge" data-pos="${pick.pos}" style="font-size:0.5rem">${pick.pos}</span></div>
+      <div class="shame-pts" style="color:${color}">${pick.points} pts ${emoji}</div>
+      <div class="shame-manager">${row.emoji || ''} ${escapeHtml(row.name.split(' ')[0])}</div>
+    </div>`;
   };
   worstEl.innerHTML = worstList.map(r => renderRow(r, r.worst, 'worst')).join('');
   bestEl.innerHTML = bestList.map(r => renderRow(r, r.best, 'best')).join('');
@@ -1306,28 +1252,23 @@ async function renderCaptainPicks() {
 function renderGlance() {
   const el = document.getElementById('weekly-glance');
   if (!el) return;
-  if (!state.familyData || !state.familyData.length) {
-    el.innerHTML = '<div class="empty"><span class="emoji">📅</span>Sync to see stats</div>';
-    return;
-  }
+  if (!state.familyData || !state.familyData.length) { el.innerHTML = '<div class="empty"><span class="emoji">📅</span>Sync to see stats</div>'; return; }
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
     const latest = hist[hist.length - 1];
     return { name: m.name, emoji: m.emoji, gwPts: latest?.points || 0, totalPts: latest?.total_points || 0 };
   }).filter(r => r.totalPts > 0);
-  if (!rows.length) { el.innerHTML = '<div class="empty">No data</div>'; return; }
+  if (!rows.length) return;
   const best = [...rows].sort((a, b) => b.gwPts - a.gwPts)[0];
   const worst = [...rows].sort((a, b) => a.gwPts - b.gwPts)[0];
   const avg = Math.round(rows.reduce((s, r) => s + r.gwPts, 0) / rows.length);
   const leader = [...rows].sort((a, b) => b.totalPts - a.totalPts)[0];
-  el.innerHTML = `
-    <div class="glance-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-      <div class="glance-card"><div class="label">🏆 Leader</div><div class="value">${leader.totalPts}</div><div class="sub">${leader.emoji} ${escapeHtml(leader.name.split(' ')[0])}</div></div>
-      <div class="glance-card"><div class="label">⚡ Best GW</div><div class="value">${best.gwPts}</div><div class="sub">${best.emoji} ${escapeHtml(best.name.split(' ')[0])}</div></div>
-      <div class="glance-card"><div class="label">📊 Family Avg</div><div class="value">${avg}</div><div class="sub">this GW</div></div>
-      <div class="glance-card"><div class="label">😅 Worst GW</div><div class="value">${worst.gwPts}</div><div class="sub">${worst.emoji} ${escapeHtml(worst.name.split(' ')[0])}</div></div>
-    </div>
-  `;
+  el.innerHTML = `<div class="glance-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
+    <div class="glance-card"><div class="label">🏆 Leader</div><div class="value">${leader.totalPts}</div><div class="sub">${leader.emoji} ${escapeHtml(leader.name.split(' ')[0])}</div></div>
+    <div class="glance-card"><div class="label">⚡ Best GW</div><div class="value">${best.gwPts}</div><div class="sub">${best.emoji} ${escapeHtml(best.name.split(' ')[0])}</div></div>
+    <div class="glance-card"><div class="label">📊 Family Avg</div><div class="value">${avg}</div><div class="sub">this GW</div></div>
+    <div class="glance-card"><div class="label">😅 Worst GW</div><div class="value">${worst.gwPts}</div><div class="sub">${worst.emoji} ${escapeHtml(worst.name.split(' ')[0])}</div></div>
+  </div>`;
 }
 
 /* ========== HISTORY ========== */
@@ -1339,7 +1280,6 @@ function renderHistory() {
   const chartAverage = document.getElementById('chart-average');
   const chipTracker = document.getElementById('chip-tracker');
   const tbody = document.querySelector('#gw-table tbody');
-
   if (!gws.length) {
     if (chartPoints) chartPoints.innerHTML = '<div class="empty"><span class="emoji">📈</span>Sync to see your chart</div>';
     if (chartRank) chartRank.innerHTML = '<div class="empty"><span class="emoji">🏅</span>Sync to see your rank</div>';
@@ -1348,51 +1288,33 @@ function renderHistory() {
     if (tbody) tbody.innerHTML = '';
     return;
   }
-
   const maxPts = Math.max(...gws.map(g => g.points), 1);
   chartPoints.innerHTML = `<div class="chart-bars">${gws.map(g => `
     <div class="chart-bar me" style="height:${(g.points / maxPts) * 180}px" title="GW${g.event}: ${g.points} pts">
       <div class="bar-value">${g.points}</div>
       <div class="bar-label">${g.event}</div>
     </div>`).join('')}</div>`;
-
   const ranks = gws.map(g => g.overall_rank).filter(r => r > 0);
   if (ranks.length > 1) {
     const minRank = Math.min(...ranks), maxRank = Math.max(...ranks);
-    const w = 900, h = 200;
-    const step = w / (ranks.length - 1);
-    const points = ranks.map((r, i) => {
-      const x = i * step;
-      const y = ((r - minRank) / (maxRank - minRank || 1)) * (h - 40) + 20;
-      return `${x},${y}`;
-    }).join(' ');
-    chartRank.innerHTML = `
-      <div class="rank-svg-wrap">
-        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;max-width:100%">
-          <defs><linearGradient id="rankLine" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#04f5ff"/></linearGradient></defs>
-          <polyline fill="none" stroke="url(#rankLine)" stroke-width="3" points="${points}" stroke-linejoin="round" stroke-linecap="round"/>
-          ${ranks.map((r, i) => {
-            const x = i * step;
-            const y = ((r - minRank) / (maxRank - minRank || 1)) * (h - 40) + 20;
-            return `<circle cx="${x}" cy="${y}" r="4" fill="#00ff87"><title>GW${gws[i].event}: #${r.toLocaleString()}</title></circle>`;
-          }).join('')}
-        </svg>
-      </div>`;
+    const w = 900, h = 200, step = w / (ranks.length - 1);
+    const points = ranks.map((r, i) => `${i * step},${((r - minRank) / (maxRank - minRank || 1)) * (h - 40) + 20}`).join(' ');
+    chartRank.innerHTML = `<div class="rank-svg-wrap"><svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto">
+      <defs><linearGradient id="rankLine" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#00ff87"/><stop offset="100%" stop-color="#04f5ff"/></linearGradient></defs>
+      <polyline fill="none" stroke="url(#rankLine)" stroke-width="3" points="${points}" stroke-linejoin="round" stroke-linecap="round"/>
+      ${ranks.map((r, i) => { const y = ((r - minRank) / (maxRank - minRank || 1)) * (h - 40) + 20; return `<circle cx="${i * step}" cy="${y}" r="4" fill="#00ff87"><title>GW${gws[i].event}: #${r.toLocaleString()}</title></circle>`; }).join('')}
+    </svg></div>`;
   } else chartRank.innerHTML = '<div class="empty">Not enough data yet</div>';
-
   const maxBoth = Math.max(...gws.map(g => Math.max(g.points, g.average_entry_score || 0)), 1);
-  chartAverage.innerHTML = `
-    <div class="chart-bars">${gws.map(g => `
-      <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
-        <div style="display:flex;gap:2px;align-items:flex-end">
-          <div class="chart-bar me" style="height:${(g.points / maxBoth) * 140}px;width:18px" title="You: ${g.points}"></div>
-          <div class="chart-bar avg" style="height:${((g.average_entry_score || 0) / maxBoth) * 140}px;width:18px" title="Avg: ${g.average_entry_score || 0}"></div>
-        </div>
-        <div class="bar-label">${g.event}</div>
-      </div>`).join('')}
-    </div>
+  chartAverage.innerHTML = `<div class="chart-bars">${gws.map(g => `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+      <div style="display:flex;gap:2px;align-items:flex-end">
+        <div class="chart-bar me" style="height:${(g.points / maxBoth) * 140}px;width:18px" title="You: ${g.points}"></div>
+        <div class="chart-bar avg" style="height:${((g.average_entry_score || 0) / maxBoth) * 140}px;width:18px" title="Avg: ${g.average_entry_score || 0}"></div>
+      </div>
+      <div class="bar-label">${g.event}</div>
+    </div>`).join('')}</div>
     <div style="display:flex;gap:16px;justify-content:center;font-size:0.7rem;color:var(--muted);padding-top:8px"><span>🟢 You</span><span>🟣 Average</span></div>`;
-
   const usedChips = {};
   gws.forEach(g => { if (g.active_chip) usedChips[g.active_chip] = g.event; });
   const allChips = ['wildcard', 'bboost', '3xc', 'freehit'];
@@ -1400,10 +1322,8 @@ function renderHistory() {
     const used = usedChips[c];
     return `<div class="chip-card ${used ? 'used' : ''}"><div class="chip-icon">${CHIP_EMOJI[c]}</div><div class="chip-name">${CHIP_NAME[c]}</div><div class="chip-status">${used ? 'Used GW' + used : 'Available'}</div></div>`;
   }).join('')}</div>`;
-
   tbody.innerHTML = [...gws].reverse().map(g => `
-    <tr><td>GW${g.event}</td><td>${g.points}</td><td>${fmtRank(g.overall_rank)}</td><td>${fmt((g.bank || 0) / 10)}</td><td>${fmt((g.value || 0) / 10)}</td><td>${g.event_transfers || 0}${g.event_transfers_cost ? ' (-' + g.event_transfers_cost + ')' : ''}</td></tr>
-  `).join('');
+    <tr><td>GW${g.event}</td><td>${g.points}</td><td>${fmtRank(g.overall_rank)}</td><td>${fmt((g.bank || 0) / 10)}</td><td>${fmt((g.value || 0) / 10)}</td><td>${g.event_transfers || 0}${g.event_transfers_cost ? ' (-' + g.event_transfers_cost + ')' : ''}</td></tr>`).join('');
 }
 
 /* ========== PLAYERS ========== */
@@ -1416,14 +1336,12 @@ function renderPlayers() {
   const sortBy = document.getElementById('player-sort')?.value || 'total_points';
   const teamMap = {};
   state.bootstrap.teams.forEach(t => teamMap[t.id] = t.short_name);
-
   let list = state.bootstrap.elements.map(el => ({
     id: el.id, name: el.web_name, fullName: `${el.first_name} ${el.second_name}`,
     pos: POS_MAP[el.element_type], price: el.now_cost / 10,
     team: teamMap[el.team] || '?', teamId: el.team,
     form: parseFloat(el.form) || 0, points: el.total_points,
-    ownership: parseFloat(el.selected_by_percent) || 0,
-    status: el.status, news: el.news,
+    ownership: parseFloat(el.selected_by_percent) || 0, status: el.status, news: el.news,
   }));
   if (q) list = list.filter(p => p.fullName.toLowerCase().includes(q) || p.team.toLowerCase().includes(q));
   if (posFilter) list = list.filter(p => p.pos === posFilter);
@@ -1434,7 +1352,7 @@ function renderPlayers() {
     return b.points - a.points;
   });
   list = list.slice(0, 100);
-  if (list.length === 0) { grid.innerHTML = '<div class="empty">No players found</div>'; return; }
+  if (!list.length) { grid.innerHTML = '<div class="empty">No players found</div>'; return; }
   grid.innerHTML = list.map(p => {
     const statusWarn = p.status !== 'a' ? '⚠️ ' : '';
     const badge = `${BADGE_BASE}/${p.teamId}.svg`;
@@ -1446,6 +1364,238 @@ function renderPlayers() {
       <div class="stat-line"><span>Owned</span><strong>${p.ownership.toFixed(1)}%</strong></div>
     </div>`;
   }).join('');
+}
+
+/* ========== PERFORMANCE MODAL ========== */
+async function openPerfModal(playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return;
+
+  const bp = state.bootstrap;
+  const el2 = bp?.elements?.find(x => x.id === p.fplId);
+  if (!el2) return;
+
+  const currentGW = state.currentGW;
+  const liveMap = currentGW ? await fetchLiveGW(currentGW) : {};
+  const live = liveMap[p.fplId];
+  const stats = live?.stats || {};
+
+  // Get season form (last 5 GWs)
+  const mine = state.familyData?.find(f => f.id === teamId);
+  const gwHistory = mine?.history?.current || [];
+
+  // Next fixtures
+  const nextFixtures = await fetchTeamFixtures(p.teamId, 3);
+
+  // Calculate performance breakdown
+  const goals = stats.goals_scored || 0;
+  const assists = stats.assists || 0;
+  const bonus = stats.bonus || 0;
+  const cleanSheets = stats.clean_sheets || 0;
+  const yellow = stats.yellow_cards || 0;
+  const red = stats.red_cards || 0;
+  const saves = stats.saves || 0;
+  const minutes = stats.minutes || 0;
+  const defcon = stats.defensive_contribution || 0;
+  const totalPts = stats.total_points || 0;
+
+  const goalPts = goals * (p.pos === 'FWD' ? 4 : p.pos === 'MID' ? 5 : 6);
+  const assistPts = assists * 3;
+  const csPts = cleanSheets ? (p.pos === 'GK' || p.pos === 'DEF' ? 6 : p.pos === 'MID' ? 1 : 0) : 0;
+  const bonusPts = bonus;
+  const cardPts = yellow * -1 + red * -3;
+  const savePts = Math.floor(saves / 3);
+  const minutesPts = minutes >= 60 ? 2 : minutes > 0 ? 1 : 0;
+  const defconPts = (p.pos === 'DEF' && defcon >= 10) ? 2 : (p.pos === 'MID' && defcon >= 12) ? 2 : 0;
+  const otherPts = totalPts - goalPts - assistPts - csPts - bonusPts - cardPts - savePts - minutesPts - defconPts;
+
+  // Value change since season start
+  const priceChange = (el2.now_cost - el2.now_cost) / 10; // we don't have "bought at" so show 0
+
+  // Bar chart data
+  const barData = [
+    { label: '⚽ Goals', value: goalPts, cls: 'mint' },
+    { label: '👟 Assists', value: assistPts, cls: 'mint' },
+    { label: '🅱️ Bonus', value: bonusPts, cls: 'gold' },
+    { label: '🛡️ Clean Sheet', value: csPts, cls: 'blue' },
+    { label: '⏱️ Minutes', value: minutesPts, cls: 'neutral' },
+    { label: '🧤 Saves', value: savePts, cls: 'blue' },
+    { label: '🎯 DEFCON', value: defconPts, cls: 'mint' },
+  ].filter(b => b.value !== 0);
+  const maxBar = Math.max(...barData.map(b => b.value), 1);
+
+  const html = `
+    <div class="perf-header">
+      ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
+      <div class="perf-header-info">
+        <h2>${escapeHtml(p.name)}</h2>
+        <div class="perf-team-info">
+          <span>${escapeHtml(p.team)}</span>
+          <span class="pos-badge" data-pos="${p.pos}">${p.pos}</span>
+          <span>${fmt(p.price)}</span>
+          <span>${(parseFloat(el2.selected_by_percent) || 0).toFixed(1)}% owned</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="perf-section">
+      <div class="perf-section-title">🎯 This GW — ${totalPts} pts</div>
+      <div class="perf-breakdown">
+        ${goals ? `<div class="perf-line"><span class="perf-stat">⚽ Goals (×${goals})</span><span>${goals} × ${p.pos === 'FWD' ? 4 : p.pos === 'MID' ? 5 : 6}</span><span class="perf-points">+${goalPts}</span></div>` : ''}
+        ${assists ? `<div class="perf-line"><span class="perf-stat">👟 Assists (×${assists})</span><span>${assists} × 3</span><span class="perf-points">+${assistPts}</span></div>` : ''}
+        ${bonus ? `<div class="perf-line"><span class="perf-stat">🅱️ Bonus Points</span><span>${bonus} BPS</span><span class="perf-points">+${bonusPts}</span></div>` : ''}
+        ${cleanSheets ? `<div class="perf-line"><span class="perf-stat">🛡️ Clean Sheet</span><span>${p.pos} bonus</span><span class="perf-points">+${csPts}</span></div>` : ''}
+        ${minutesPts ? `<div class="perf-line"><span class="perf-stat">⏱️ Minutes</span><span>${minutes} mins</span><span class="perf-points">+${minutesPts}</span></div>` : ''}
+        ${savePts ? `<div class="perf-line"><span class="perf-stat">🧤 Saves</span><span>${saves} saves</span><span class="perf-points">+${savePts}</span></div>` : ''}
+        ${defconPts ? `<div class="perf-line"><span class="perf-stat">🎯 DEFCON</span><span>${defcon}</span><span class="perf-points">+${defconPts}</span></div>` : ''}
+        ${cardPts < 0 ? `<div class="perf-line dim"><span class="perf-stat">⚠️ Cards</span><span>${yellow}Y ${red}R</span><span class="perf-points">${cardPts}</span></div>` : ''}
+        ${otherPts !== 0 ? `<div class="perf-line dim"><span class="perf-stat">🎁 Other</span><span>—</span><span class="perf-points">${otherPts > 0 ? '+' : ''}${otherPts}</span></div>` : ''}
+        <div class="perf-total"><span>Total</span><span class="perf-points">${totalPts} pts</span></div>
+      </div>
+    </div>
+
+    ${barData.length > 1 ? `
+      <div class="perf-section">
+        <div class="perf-section-title">📊 Contribution Breakdown</div>
+        <div class="perf-bar-chart">
+          ${barData.map(b => `
+            <div class="perf-bar-row">
+              <span>${b.label}</span>
+              <div class="perf-bar-track"><div class="perf-bar-fill ${b.cls}" style="width:${(b.value / maxBar) * 100}%"></div></div>
+              <span style="text-align:right;font-weight:800;color:var(--mint)">+${b.value}</span>
+            </div>`).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <div class="perf-section">
+      <div class="perf-section-title">📊 Season Overview</div>
+      <div class="perf-info-grid">
+        <div class="perf-info-card"><div class="label">Total Pts</div><div class="value">${p.totalPoints}</div></div>
+        <div class="perf-info-card"><div class="label">Form</div><div class="value">${(p.form || 0).toFixed(1)}</div></div>
+        <div class="perf-info-card"><div class="label">Goals</div><div class="value">${el2.goals_scored || 0}</div></div>
+        <div class="perf-info-card"><div class="label">Assists</div><div class="value">${el2.assists || 0}</div></div>
+        <div class="perf-info-card"><div class="label">Bonus</div><div class="value">${el2.bonus || 0}</div></div>
+        <div class="perf-info-card"><div class="label">Minutes</div><div class="value">${el2.minutes || 0}</div></div>
+      </div>
+    </div>
+
+    ${nextFixtures.length ? `
+      <div class="perf-section">
+        <div class="perf-section-title">📅 Next Fixtures</div>
+        <div class="perf-fixtures">
+          ${nextFixtures.map(f => {
+            const isHome = f.team_h === p.teamId;
+            const opp = isHome ? f.team_a : f.team_h;
+            const diff = isHome ? f.team_h_difficulty : f.team_a_difficulty;
+            const oppInfo = getTeamInfo(opp);
+            return `<div class="perf-fixture">
+              <span class="fixture-gw">GW${f.event}</span>
+              <img src="${oppInfo.badge}" onerror="this.style.display='none'">
+              <span style="flex:1;font-weight:700">${isHome ? 'vs' : '@'} ${escapeHtml(oppInfo.short)}</span>
+              <span class="fixture-diff" data-diff="${diff}">${diff}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    ${p.news ? `<div class="perf-injury-note">⚠️ ${escapeHtml(p.news)}</div>` : ''}
+
+    <div class="modal-actions">
+      <button class="btn" onclick="quickTransferOut('${p.id}')">🔄 Transfer Out</button>
+      <button class="btn primary" onclick="closeModal('perf-modal')">Close</button>
+    </div>
+  `;
+
+  document.getElementById('perf-modal-content').innerHTML = html;
+  document.getElementById('perf-modal').classList.add('active');
+}
+
+function quickTransferOut(playerId) {
+  const p = state.players.find(x => x.id === playerId);
+  if (!p) return;
+  closeModal('perf-modal');
+  openPlanModal(null, state.nextGW || state.currentGW + 1);
+  setTimeout(() => {
+    document.getElementById('pl-out').value = p.name;
+    document.getElementById('pl-out-price').value = p.price;
+    onOutPlayerChange();
+  }, 100);
+}
+
+/* ========== AUTOCOMPLETE ========== */
+function fillDatalists() {
+  const bp = state.bootstrap;
+  if (!bp) return;
+
+  // All players list
+  const allPlayersDl = document.getElementById('all-players-list');
+  const allPlayersDl2 = document.getElementById('all-players-list2');
+  const teamMap = {};
+  bp.teams.forEach(t => teamMap[t.id] = t.short_name);
+
+  const allOpts = bp.elements
+    .sort((a, b) => b.total_points - a.total_points)
+    .slice(0, 300)
+    .map(el => `<option value="${escapeHtml(el.web_name)}">${teamMap[el.team] || '?'} · ${fmt(el.now_cost / 10)} · ${POS_MAP[el.element_type]}</option>`)
+    .join('');
+
+  if (allPlayersDl) allPlayersDl.innerHTML = allOpts;
+  if (allPlayersDl2) allPlayersDl2.innerHTML = allOpts;
+
+  // Squad players (for OUT + Captain + Vice)
+  const squadDl = document.getElementById('squad-players-list');
+  const captainDl = document.getElementById('captain-options');
+  const captainDl2 = document.getElementById('captain-options-2');
+
+  const squadOpts = (state.players || [])
+    .sort((a, b) => POS_ORDER[a.pos] - POS_ORDER[b.pos])
+    .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${fmt(p.price)} · ${p.pos}</option>`)
+    .join('');
+
+  const capOpts = (state.players || []).filter(p => !p.bench)
+    .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${p.pos}</option>`)
+    .join('');
+
+  if (squadDl) squadDl.innerHTML = squadOpts;
+  if (captainDl) captainDl.innerHTML = capOpts;
+  if (captainDl2) captainDl2.innerHTML = capOpts;
+}
+
+function onOutPlayerChange() {
+  const name = document.getElementById('pl-out').value.trim();
+  if (!name) return;
+  const p = state.players.find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (p) {
+    document.getElementById('pl-out-price').value = p.price;
+    // If OUT player was captain, prefill captain empty
+    updateBankImpact();
+  }
+}
+
+function onInPlayerChange() {
+  const name = document.getElementById('pl-in').value.trim();
+  if (!name) return;
+  const bp = state.bootstrap;
+  if (!bp) return;
+  const el = bp.elements.find(e => e.web_name.toLowerCase() === name.toLowerCase() || e.second_name.toLowerCase() === name.toLowerCase());
+  if (el) {
+    document.getElementById('pl-in-price').value = (el.now_cost / 10).toFixed(1);
+    updateBankImpact();
+  }
+}
+
+function updateBankImpact() {
+  const outP = parseFloat(document.getElementById('pl-out-price').value) || 0;
+  const inP = parseFloat(document.getElementById('pl-in-price').value) || 0;
+  const impact = document.getElementById('pl-bank-impact');
+  if (!impact) return;
+  if (!outP && !inP) { impact.style.display = 'none'; return; }
+  const newBank = state.bank + outP - inP;
+  impact.className = 'plan-bank-impact' + (newBank < 0 ? ' negative' : '');
+  impact.innerHTML = `💰 Bank after: <strong>${fmt(newBank)}</strong> ${newBank < 0 ? '⚠️ Not enough funds!' : ''}`;
+  impact.style.display = 'block';
 }
 
 /* ========== OPTIMIZER ========== */
@@ -1470,12 +1620,10 @@ function optimizeLineup() {
   const usedIds = new Set(xi.map(p => p.id));
   const bench = scored.filter(p => !usedIds.has(p.id)).sort((a, b) => b.score - a.score);
   const sortedXI = [...xi].sort((a, b) => b.score - a.score);
-  const captain = sortedXI[0];
-  const vice = sortedXI[1];
   state.players.forEach(p => {
     p.bench = !usedIds.has(p.id);
-    p.captain = p.id === captain.id;
-    p.vice = p.id === vice.id;
+    p.captain = p.id === sortedXI[0].id;
+    p.vice = p.id === sortedXI[1].id;
   });
   let pos = 1;
   ['GK', 'DEF', 'MID', 'FWD'].forEach(pp => {
@@ -1484,14 +1632,14 @@ function optimizeLineup() {
       if (pl) pl.order = pos++;
     });
   });
-  let benchPos = 12;
+  let bp2 = 12;
   bench.forEach(x => {
     const pl = state.players.find(pp2 => pp2.id === x.id);
-    if (pl) pl.order = benchPos++;
+    if (pl) pl.order = bp2++;
   });
   saveState();
   renderSquad();
-  toast(`🤖 Optimized — Captain: ${captain.name}`);
+  toast(`🤖 Optimized — Captain: ${sortedXI[0].name}`);
 }
 
 /* ========== MODALS ========== */
@@ -1500,6 +1648,7 @@ let editingPlanId = null;
 
 function openPlayerModal(id = null) {
   editingPlayerId = id;
+  fillDatalists();
   const title = document.getElementById('player-modal-title');
   const nameEl = document.getElementById('p-name');
   const posEl = document.getElementById('p-pos');
@@ -1558,6 +1707,8 @@ function saveFT() {
 
 function openPlanModal(id = null, gw = null) {
   editingPlanId = id;
+  fillDatalists();
+
   const title = document.getElementById('plan-modal-title');
   const gwEl = document.getElementById('pl-gw');
   const outEl = document.getElementById('pl-out');
@@ -1570,63 +1721,51 @@ function openPlanModal(id = null, gw = null) {
   const noteEl = document.getElementById('pl-note');
   const ftEl = document.getElementById('pl-ft-after');
   const delBtn = document.getElementById('pl-delete-btn');
+  const bankImpact = document.getElementById('pl-bank-impact');
+  const hitWarning = document.getElementById('pl-hit-warning');
 
-  // Captain datalist
-  const dl = document.getElementById('captain-options');
-  if (dl && state.players) {
-    dl.innerHTML = state.players.filter(p => !p.bench)
-      .map(p => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.team)} · ${p.pos}</option>`).join('');
-  }
+  if (bankImpact) bankImpact.style.display = 'none';
+  if (hitWarning) hitWarning.style.display = 'none';
 
   if (id) {
     const p = state.plans.find(x => x.id === id);
     if (p) {
       title.textContent = 'Edit Plan';
-      gwEl.value = p.gw; outEl.value = p.outName || ''; outPEl.value = p.outPrice || '';
-      inEl.value = p.inName || ''; inPEl.value = p.inPrice || ''; chipEl.value = p.chip || '';
-      capEl.value = p.captain || ''; viceEl.value = p.vice || '';
-      noteEl.value = p.note || ''; ftEl.value = p.ftAfter ?? '';
+      gwEl.value = p.gw;
+      outEl.value = p.outName || '';
+      outPEl.value = p.outPrice || '';
+      inEl.value = p.inName || '';
+      inPEl.value = p.inPrice || '';
+      chipEl.value = p.chip || '';
+      capEl.value = p.captain || '';
+      viceEl.value = p.vice || '';
+      noteEl.value = p.note || '';
+      ftEl.value = p.ftAfter ?? '';
       delBtn.style.display = 'inline-flex';
-      // Lock if past GW
       const isPast = getGWStatus(p.gw) === 'past';
-      gwEl.disabled = isPast;
-      outEl.disabled = isPast;
-      outPEl.disabled = isPast;
-      inEl.disabled = isPast;
-      inPEl.disabled = isPast;
-      chipEl.disabled = isPast;
-      capEl.disabled = isPast;
-      viceEl.disabled = isPast;
-      noteEl.disabled = isPast;
-      ftEl.disabled = isPast;
+      [gwEl, outEl, outPEl, inEl, inPEl, chipEl, capEl, viceEl, noteEl, ftEl].forEach(el => el.disabled = isPast);
       if (isPast) toast('Past GW — read-only', false);
     }
   } else {
     title.textContent = 'Add Plan';
-    gwEl.value = gw || state.currentGW || 1;
+    gwEl.value = gw || state.nextGW || state.currentGW || 1;
     outEl.value = ''; outPEl.value = ''; inEl.value = ''; inPEl.value = '';
     chipEl.value = ''; capEl.value = ''; viceEl.value = '';
     noteEl.value = ''; ftEl.value = '';
     delBtn.style.display = 'none';
-    gwEl.disabled = false; outEl.disabled = false; outPEl.disabled = false;
-    inEl.disabled = false; inPEl.disabled = false; chipEl.disabled = false;
-    capEl.disabled = false; viceEl.disabled = false; noteEl.disabled = false;
-    ftEl.disabled = false;
+    [gwEl, outEl, outPEl, inEl, inPEl, chipEl, capEl, viceEl, noteEl, ftEl].forEach(el => el.disabled = false);
   }
   document.getElementById('plan-modal').classList.add('active');
 
   const gwVal = parseInt(gwEl.value) || 1;
   renderPlanFixtures(gwVal);
+  updateBankImpact();
 
   gwEl.oninput = () => {
     const v = parseInt(gwEl.value) || 1;
     renderPlanFixtures(v);
     const isPast = getGWStatus(v) === 'past';
-    gwEl.disabled = isPast;
-    outEl.disabled = isPast; outPEl.disabled = isPast;
-    inEl.disabled = isPast; inPEl.disabled = isPast;
-    chipEl.disabled = isPast; capEl.disabled = isPast;
-    viceEl.disabled = isPast; noteEl.disabled = isPast; ftEl.disabled = isPast;
+    [gwEl, outEl, outPEl, inEl, inPEl, chipEl, capEl, viceEl, noteEl, ftEl].forEach(el => el.disabled = isPast);
   };
 }
 
@@ -1641,50 +1780,39 @@ async function renderPlanFixtures(gw) {
   const preview = document.getElementById('pl-fixtures-preview');
   if (!preview) return;
   preview.innerHTML = '<div class="fixture-loading">⏳ Loading GW' + gw + ' fixtures...</div>';
-
   const fixtures = await fetchFixturesForGW(gw);
-  if (!fixtures.length) {
-    preview.innerHTML = '<div class="fixture-loading">No fixtures available for GW' + gw + '</div>';
-    return;
-  }
-
+  if (!fixtures.length) { preview.innerHTML = '<div class="fixture-loading">No fixtures available for GW' + gw + '</div>'; return; }
   const sorted = sortFixtures(fixtures);
   const groups = groupFixturesByDay(sorted);
   const myPlayers = myPlayersInFixtures(fixtures);
   const myTeamIds = new Set(myPlayers.map(p => p.teamId));
-
   let html = `<div class="fixtures-header">📅 GW${gw} Matches</div>`;
-
   Object.entries(groups).forEach(([day, list]) => {
     html += `<div class="fixture-day-group"><div class="fixture-day-label">${escapeHtml(day)}</div>`;
     list.forEach(f => {
       const home = getTeamInfo(f.team_h);
       const away = getTeamInfo(f.team_a);
       const isMine = myTeamIds.has(f.team_h) || myTeamIds.has(f.team_a);
-      html += `
-        <div class="fixture-row ${isMine ? 'mine' : ''}">
-          <div class="fixture-team"><img src="${home.badge}" onerror="this.style.display='none'"><span>${escapeHtml(home.short)}</span></div>
-          <div class="fixture-vs">${f.finished ? `${f.team_h_score}-${f.team_a_score}` : 'vs'}</div>
-          <div class="fixture-team away"><span>${escapeHtml(away.short)}</span><img src="${away.badge}" onerror="this.style.display='none'"></div>
-          <div style="display:flex;gap:4px"><span class="fixture-diff" data-diff="${f.team_h_difficulty}">${f.team_h_difficulty}</span><span class="fixture-diff" data-diff="${f.team_a_difficulty}">${f.team_a_difficulty}</span></div>
-        </div>`;
+      html += `<div class="fixture-row ${isMine ? 'mine' : ''}">
+        <div class="fixture-team"><img src="${home.badge}" onerror="this.style.display='none'"><span>${escapeHtml(home.short)}</span></div>
+        <div class="fixture-vs">${f.finished ? `${f.team_h_score}-${f.team_a_score}` : 'vs'}</div>
+        <div class="fixture-team away"><span>${escapeHtml(away.short)}</span><img src="${away.badge}" onerror="this.style.display='none'"></div>
+        <div style="display:flex;gap:4px"><span class="fixture-diff" data-diff="${f.team_h_difficulty}">${f.team_h_difficulty}</span><span class="fixture-diff" data-diff="${f.team_a_difficulty}">${f.team_a_difficulty}</span></div>
+      </div>`;
     });
     html += `</div>`;
   });
-
   if (myPlayers.length) {
     html += `<div class="fixtures-header" style="margin-top:14px">👥 Your players this GW</div>`;
     myPlayers.forEach(mp => {
-      html += `
-        <div class="fixture-row mine">
-          <div class="fixture-team"><span>${escapeHtml(mp.player)}</span></div>
-          <div class="fixture-vs">${mp.home ? 'vs' : '@'}</div>
-          <div class="fixture-team away"><img src="${mp.opp.badge}" onerror="this.style.display='none'"><span>${escapeHtml(mp.opp.short)}</span></div>
-          <span class="fixture-diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
-        </div>`;
+      html += `<div class="fixture-row mine">
+        <div class="fixture-team"><span>${escapeHtml(mp.player)}</span></div>
+        <div class="fixture-vs">${mp.home ? 'vs' : '@'}</div>
+        <div class="fixture-team away"><img src="${mp.opp.badge}" onerror="this.style.display='none'"><span>${escapeHtml(mp.opp.short)}</span></div>
+        <span class="fixture-diff" data-diff="${mp.difficulty}">${mp.difficulty}</span>
+      </div>`;
     });
   }
-
   preview.innerHTML = html;
 }
 
@@ -1702,13 +1830,20 @@ function savePlan() {
   const ftAfter = ftAfterRaw === '' ? null : parseInt(ftAfterRaw);
 
   if (!gw || gw < 1 || gw > 38) return toast('GW must be 1-38', true);
+  if (getGWStatus(gw) === 'past') return toast('Cannot plan for a past GW', true);
 
-  if (getGWStatus(gw) === 'past') {
-    return toast('Cannot plan for a past GW', true);
+  // Hit warning: check if there are multiple transfers planned for same GW
+  const sameGWPlans = state.plans.filter(p => p.gw === gw && p.id !== editingPlanId && p.outName && p.inName);
+  if (outName && inName && sameGWPlans.length >= state.freeTransfers) {
+    const warning = document.getElementById('pl-hit-warning');
+    if (warning && warning.style.display === 'none') {
+      warning.innerHTML = `⚠️ This may cost <strong>-4 pts</strong> (extra transfer). Click Save again to confirm.`;
+      warning.style.display = 'block';
+      return;
+    }
   }
 
   const payload = { gw, outName, outPrice, inName, inPrice, chip, captain, vice, note, ftAfter };
-
   if (editingPlanId) {
     Object.assign(state.plans.find(x => x.id === editingPlanId), payload);
     toast('Plan updated ✏️');
@@ -1728,7 +1863,21 @@ document.querySelectorAll('.modal-overlay').forEach(el => {
   el.addEventListener('click', e => { if (e.target === el) el.classList.remove('active'); });
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'));
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay.active').forEach(el => el.classList.remove('active'));
+    return;
+  }
+  // Shortcuts (only when no modal is open and no input focused)
+  if (document.querySelector('.modal-overlay.active')) return;
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  const key = e.key.toLowerCase();
+  if (key === 'n') { e.preventDefault(); openPlanModal(); }
+  if (key === 's') { e.preventDefault(); syncAll(true); }
+  if (key === 'd') { e.preventDefault(); switchView('dashboard', document.querySelector('[data-view="dashboard"]')); }
+  if (key === 'p') { e.preventDefault(); switchView('planner', document.querySelector('[data-view="planner"]')); }
+  if (key === 'l') { e.preventDefault(); switchView('leaderboard', document.querySelector('[data-view="leaderboard"]')); }
+  if (key === 'h') { e.preventDefault(); switchView('history', document.querySelector('[data-view="history"]')); }
 });
 
 function exportData() {
@@ -1763,9 +1912,11 @@ window.addEventListener('DOMContentLoaded', () => {
     pickManager(last, document.querySelector(`.manager-pill[data-id="${last}"]`));
   }
   startCountdown();
+  updateSyncDot();
+  // Update sync dot every minute
+  setInterval(updateSyncDot, 60000);
 });
 
-// Expose functions globally
 window.syncAll = syncAll;
 window.toggleTheme = toggleTheme;
 window.switchView = switchView;
@@ -1773,6 +1924,7 @@ window.pickManager = pickManager;
 window.startApp = startApp;
 window.logout = logout;
 window.showHelp = showHelp;
+window.showShortcuts = showShortcuts;
 window.openPlayerModal = openPlayerModal;
 window.savePlayer = savePlayer;
 window.removePlayer = removePlayer;
@@ -1794,3 +1946,8 @@ window.renderSeasonPlanner = renderSeasonPlanner;
 window.toggleAccordion = toggleAccordion;
 window.expandAllPlans = expandAllPlans;
 window.collapseAllPlans = collapseAllPlans;
+window.openPerfModal = openPerfModal;
+window.quickTransferOut = quickTransferOut;
+window.onOutPlayerChange = onOutPlayerChange;
+window.onInPlayerChange = onInPlayerChange;
+window.updateBankImpact = updateBankImpact;
