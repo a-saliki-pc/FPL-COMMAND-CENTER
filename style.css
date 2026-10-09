@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v7 — style.css
-   Pitch View Edition
+   FPL Command Center v8 — style.css
+   Planning Mode Edition
    ========================================================= */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -138,9 +138,16 @@ section { margin-bottom: 40px; }
 .main-nav { display: flex; gap: 6px; margin-bottom: 28px; overflow-x: auto; padding-bottom: 8px; border-bottom: 1px solid var(--glass-border); scrollbar-width: thin; }
 .main-nav::-webkit-scrollbar { height: 4px; }
 .main-nav::-webkit-scrollbar-thumb { background: var(--mint); border-radius: 2px; }
-.main-tab { background: transparent; border: none; color: var(--muted); padding: 12px 18px; font-weight: 800; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; font-family: inherit; display: flex; align-items: center; gap: 6px; }
+.main-tab { background: transparent; border: none; color: var(--muted); padding: 12px 18px; font-weight: 800; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; white-space: nowrap; font-family: inherit; display: flex; align-items: center; gap: 6px; position: relative; }
 .main-tab:hover { color: var(--text); }
 .main-tab.active { color: var(--mint); border-bottom-color: var(--mint); }
+.main-tab.has-plan::after {
+  content: '●';
+  position: absolute;
+  top: 6px; right: 6px;
+  color: var(--gold);
+  font-size: 0.6rem;
+}
 .tab-emoji { font-size: 1rem; }
 .view { animation: fadeIn 0.3s ease; }
 @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -237,7 +244,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
 .gw-table tr:hover td { background: var(--glass-hover); }
 .gw-table td:first-child { font-weight: 800; color: var(--mint); }
 
-/* SQUAD GRID (list view) */
+/* SQUAD GRID */
 .squad-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .player-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 14px; position: relative; overflow: hidden; transition: all 0.3s; cursor: pointer; }
 .player-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--muted); }
@@ -285,18 +292,14 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   box-shadow: inset 0 0 60px rgba(0,0,0,0.3);
   min-height: 500px;
 }
-/* Pitch texture lines */
 .pitch-view::before {
   content: '';
   position: absolute;
   inset: 0;
-  background-image:
-    /* Horizontal stripes for grass */
-    repeating-linear-gradient(0deg, transparent 0, transparent 40px, rgba(255,255,255,0.03) 40px, rgba(255,255,255,0.03) 80px);
+  background-image: repeating-linear-gradient(0deg, transparent 0, transparent 40px, rgba(255,255,255,0.03) 40px, rgba(255,255,255,0.03) 80px);
   pointer-events: none;
   border-radius: 14px;
 }
-/* Center circle */
 .pitch-view::after {
   content: '';
   position: absolute;
@@ -307,19 +310,17 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   border-radius: 50%;
   pointer-events: none;
 }
-
 .pitch-formation {
   text-align: center;
   font-size: 0.75rem;
   font-weight: 800;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255,255,255,0.85);
   letter-spacing: 0.15em;
   text-transform: uppercase;
   margin-bottom: 12px;
   position: relative;
   z-index: 2;
 }
-
 .pitch-row {
   display: flex;
   justify-content: center;
@@ -334,17 +335,17 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
 .pitch-row.def { margin-bottom: 40px; }
 .pitch-row.gk { margin-bottom: 10px; }
 
-/* Player card on pitch */
+/* Player card on pitch (FACES) */
 .pitch-card {
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(10px);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 8px 10px;
   text-align: center;
   cursor: pointer;
   transition: all 0.25s;
-  min-width: 78px;
-  max-width: 100px;
+  min-width: 82px;
+  max-width: 105px;
   position: relative;
   border: 2px solid rgba(255,255,255,0.15);
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
@@ -366,7 +367,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   border-color: var(--red);
 }
 .pitch-card img {
-  width: 44px; height: 44px;
+  width: 52px; height: 52px;
   border-radius: 50%;
   object-fit: cover;
   background: #1a1a1a;
@@ -374,22 +375,22 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   border: 2px solid rgba(255,255,255,0.2);
 }
 .pitch-card .pitch-name {
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 800;
   color: #fff;
   text-overflow: ellipsis;
   overflow: hidden;
   white-space: nowrap;
   line-height: 1.2;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 .pitch-card .pitch-pts {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   font-weight: 900;
   color: var(--mint);
   background: rgba(0,255,135,0.15);
   border-radius: 4px;
-  padding: 1px 5px;
+  padding: 1px 6px;
   display: inline-block;
 }
 .pitch-card .pitch-pts.blank {
@@ -398,14 +399,14 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
 }
 .pitch-card .pitch-badge-c {
   position: absolute;
-  top: -6px; right: -6px;
+  top: -8px; right: -8px;
   background: linear-gradient(135deg, var(--gold), var(--pink));
   color: #0d0221;
   font-weight: 900;
-  font-size: 0.55rem;
-  padding: 1px 5px;
+  font-size: 0.6rem;
+  padding: 2px 6px;
   border-radius: 50%;
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -413,14 +414,14 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
 }
 .pitch-card .pitch-badge-v {
   position: absolute;
-  top: -6px; right: -6px;
+  top: -8px; right: -8px;
   background: var(--cyan);
   color: #0d0221;
   font-weight: 900;
-  font-size: 0.55rem;
-  padding: 1px 5px;
+  font-size: 0.6rem;
+  padding: 2px 6px;
   border-radius: 50%;
-  width: 18px; height: 18px;
+  width: 20px; height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -429,6 +430,31 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   position: absolute;
   top: -8px; left: -8px;
   font-size: 0.9rem;
+}
+.pitch-card .pitch-badge-num {
+  position: absolute;
+  bottom: -8px; left: -8px;
+  background: var(--muted);
+  color: #0d0221;
+  font-weight: 900;
+  font-size: 0.6rem;
+  padding: 2px 6px;
+  border-radius: 50%;
+  width: 20px; height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Planning mode pitch cards get hover glow */
+.planning-active .pitch-card {
+  cursor: pointer;
+  border-color: rgba(4,245,255,0.3);
+}
+.planning-active .pitch-card:hover {
+  border-color: var(--cyan);
+  box-shadow: 0 0 25px rgba(4,245,255,0.5);
+  transform: translateY(-4px) scale(1.06);
 }
 
 /* Bench section below pitch */
@@ -442,7 +468,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: rgba(255,255,255,0.6);
+  color: rgba(255,255,255,0.7);
   margin-bottom: 10px;
   text-align: center;
 }
@@ -453,7 +479,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   flex-wrap: wrap;
 }
 .pitch-card.bench {
-  opacity: 0.8;
+  opacity: 0.85;
   transform: scale(0.92);
 }
 .pitch-card.bench:hover {
@@ -492,6 +518,227 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   font-size: 0.7rem;
   color: var(--muted);
   margin-top: 2px;
+}
+
+/* ============ PLANNING MODE BANNER ============ */
+.planning-banner {
+  background: linear-gradient(135deg, rgba(4,245,255,0.15), rgba(0,255,135,0.08));
+  border: 2px solid var(--cyan);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+  animation: slideDown 0.4s ease;
+  box-shadow: 0 0 30px rgba(4,245,255,0.25);
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.planning-banner-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.planning-title {
+  font-size: 1rem;
+  font-weight: 900;
+  color: var(--cyan);
+  letter-spacing: 0.03em;
+}
+.planning-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.planning-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* ============ PLAYER ACTION MODAL ============ */
+.action-modal { max-width: 520px; }
+.action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  width: 100%;
+}
+.action-btn:hover {
+  border-color: var(--mint);
+  background: var(--glass-hover);
+  transform: translateX(4px);
+}
+.action-btn.primary-action {
+  background: linear-gradient(135deg, var(--mint), var(--cyan));
+  color: #0d0221;
+  border: none;
+}
+.action-btn.primary-action:hover {
+  box-shadow: 0 0 25px rgba(0,255,135,0.5);
+}
+.action-btn.danger-action:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+.action-btn .action-icon {
+  font-size: 1.3rem;
+  min-width: 30px;
+  text-align: center;
+}
+.action-btn .action-info {
+  flex: 1;
+}
+.action-btn .action-sub {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 400;
+  margin-top: 2px;
+}
+.action-player-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+body.light-mode .action-player-info { background: rgba(0,0,0,0.03); }
+.action-player-info img {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 2px solid var(--mint);
+}
+.action-player-info .info-text {
+  flex: 1;
+}
+.action-player-info .info-name {
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 2px;
+}
+.action-player-info .info-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* ============ SWAP MODAL ============ */
+.swap-modal { max-width: 520px; }
+.swap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.swap-option {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: inherit;
+  color: var(--text);
+  text-align: left;
+}
+.swap-option:hover {
+  border-color: var(--mint);
+  background: var(--glass-hover);
+  transform: translateY(-2px);
+}
+.swap-option img {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--glass-border);
+  flex-shrink: 0;
+}
+.swap-option .swap-name {
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+.swap-option .swap-meta {
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.swap-option.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.swap-option.disabled:hover {
+  transform: none;
+  border-color: var(--glass-border);
+  background: var(--glass);
+}
+
+/* ============ PLAN COMPARE ============ */
+.plan-compare-content {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 16px;
+}
+.plan-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--glass-border);
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+.plan-compare-row:last-child { border-bottom: none; }
+.plan-compare-row .label {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  min-width: 90px;
+}
+.plan-compare-row .from {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+.plan-compare-row .arrow {
+  color: var(--mint);
+  font-weight: 900;
+}
+.plan-compare-row .to {
+  color: var(--mint);
+  font-weight: 800;
+}
+.plan-compare-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-style: italic;
 }
 
 /* ============ TIMELINE ============ */
@@ -697,7 +944,7 @@ body.light-mode .fixtures-preview { background: rgba(0,0,0,0.03); }
 .fixture-diff[data-diff="5"] { background: rgba(239,68,68,0.3); color: #ff8080; }
 .fixture-loading { padding: 16px; text-align: center; color: var(--muted); font-size: 0.8rem; }
 
-/* SHORTCUTS MODAL */
+/* SHORTCUTS */
 .shortcuts-list { display: flex; flex-direction: column; gap: 10px; }
 .shortcut-row { display: flex; align-items: center; gap: 14px; font-size: 0.88rem; }
 .shortcut-row kbd { background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 6px; padding: 4px 10px; font-family: 'SF Mono', Monaco, monospace; font-size: 0.75rem; font-weight: 800; color: var(--mint); min-width: 40px; text-align: center; }
@@ -762,13 +1009,12 @@ footer a { color: var(--mint); text-decoration: none; }
   .player-card .player-stats { gap: 4px; }
   .player-stat .stat-val { font-size: 0.78rem; }
 
-  /* Pitch on mobile */
   .pitch-view { padding: 14px 8px; min-height: 420px; }
   .pitch-row { gap: 6px; margin-bottom: 14px; }
-  .pitch-card { min-width: 60px; max-width: 76px; padding: 6px 6px; }
-  .pitch-card img { width: 34px; height: 34px; }
-  .pitch-card .pitch-name { font-size: 0.58rem; }
-  .pitch-card .pitch-pts { font-size: 0.55rem; padding: 1px 4px; }
+  .pitch-card { min-width: 62px; max-width: 80px; padding: 6px 6px; }
+  .pitch-card img { width: 38px; height: 38px; }
+  .pitch-card .pitch-name { font-size: 0.6rem; }
+  .pitch-card .pitch-pts { font-size: 0.58rem; padding: 1px 4px; }
   .pitch-view::after { width: 90px; height: 90px; }
   .pitch-bench-row { gap: 6px; }
 
@@ -799,10 +1045,17 @@ footer a { color: var(--mint); text-decoration: none; }
   .mini-plan-gw { font-size: 0.82rem; min-width: 38px; }
   .mini-plan-info { font-size: 0.72rem; gap: 6px; }
   .mini-plan-tag { font-size: 0.65rem; padding: 1px 6px; }
-
   .perf-bar-row { grid-template-columns: 80px 1fr 45px; }
   .perf-header img { width: 50px; height: 50px; }
   .perf-header-info h2 { font-size: 1.1rem; }
+
+  .planning-banner-inner { flex-direction: column; align-items: stretch; gap: 8px; }
+  .planning-actions { justify-content: flex-end; }
+  .swap-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .swap-option { padding: 8px; gap: 6px; }
+  .swap-option img { width: 28px; height: 28px; }
+  .swap-option .swap-name { font-size: 0.75rem; }
+  .swap-option .swap-meta { font-size: 0.6rem; }
 }
 
 @media (max-width: 768px) {
@@ -826,7 +1079,7 @@ html.light-mode .player-result, html.light-mode .welcome-card, html.light-mode .
 html.light-mode .chip-card, html.light-mode .trophy-item, html.light-mode .gw-accordion,
 html.light-mode .mini-plan-row, html.light-mode .planner-status-bar,
 html.light-mode .glance-stat, html.light-mode .perf-info-card,
-html.light-mode .team-summary-item {
+html.light-mode .team-summary-item, html.light-mode .action-btn, html.light-mode .swap-option {
   background: rgba(255,255,255,0.75) !important;
   border-color: rgba(0,0,0,0.1) !important;
   color: #1a0533 !important;
