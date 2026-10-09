@@ -1,6 +1,5 @@
 /* =========================================================
-   FPL Command Center v8 — style.css
-   Planning Mode Edition
+   FPL Command Center v9 — style.css
    ========================================================= */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -67,7 +66,7 @@ body.light-mode::before {
 body.light-mode .orb { opacity: 0.2; }
 @keyframes float { 0%,100%{transform:translate(0,0) scale(1)} 33%{transform:translate(30px,-30px) scale(1.1)} 66%{transform:translate(-30px,30px) scale(0.95)} }
 
-/* ============ WELCOME ============ */
+/* WELCOME */
 .welcome { position: fixed; inset: 0; z-index: 500; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .welcome-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 24px; padding: 40px 32px; max-width: 460px; width: 100%; backdrop-filter: blur(20px); box-shadow: 0 30px 80px rgba(0,0,0,0.3); text-align: center; position: relative; }
 body.light-mode .welcome-card { background: linear-gradient(135deg, #ffffff, #f5f3ff); box-shadow: 0 30px 80px rgba(109,40,217,0.15); }
@@ -280,7 +279,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
 .player-mark.neg { background: rgba(239,68,68,0.15); color: var(--red); }
 .player-mark.neutral { background: rgba(255,185,46,0.15); color: var(--gold); }
 
-/* ============ PITCH VIEW ============ */
+/* PITCH VIEW */
 .pitch-view {
   background: linear-gradient(180deg, var(--pitch-green-1) 0%, var(--pitch-green-2) 100%);
   border-radius: 16px;
@@ -335,7 +334,6 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
 .pitch-row.def { margin-bottom: 40px; }
 .pitch-row.gk { margin-bottom: 10px; }
 
-/* Player card on pitch (FACES) */
 .pitch-card {
   background: rgba(0,0,0,0.55);
   backdrop-filter: blur(10px);
@@ -373,6 +371,9 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   background: #1a1a1a;
   margin-bottom: 4px;
   border: 2px solid rgba(255,255,255,0.2);
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
 .pitch-card .pitch-name {
   font-size: 0.7rem;
@@ -446,7 +447,6 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   justify-content: center;
 }
 
-/* Planning mode pitch cards get hover glow */
 .planning-active .pitch-card {
   cursor: pointer;
   border-color: rgba(4,245,255,0.3);
@@ -457,7 +457,6 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   transform: translateY(-4px) scale(1.06);
 }
 
-/* Bench section below pitch */
 .pitch-bench {
   margin-top: 16px;
   padding-top: 16px;
@@ -487,7 +486,6 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   transform: scale(0.95) translateY(-4px);
 }
 
-/* Team summary banner */
 .team-summary-banner {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -520,7 +518,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   margin-top: 2px;
 }
 
-/* ============ PLANNING MODE BANNER ============ */
+/* PLANNING BANNER */
 .planning-banner {
   background: linear-gradient(135deg, rgba(4,245,255,0.15), rgba(0,255,135,0.08));
   border: 2px solid var(--cyan);
@@ -559,7 +557,7 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   line-height: 1.5;
 }
 
-/* ============ PLAYER ACTION MODAL ============ */
+/* ACTION MODAL */
 .action-modal { max-width: 520px; }
 .action-list {
   display: flex;
@@ -643,7 +641,7 @@ body.light-mode .action-player-info { background: rgba(0,0,0,0.03); }
   color: var(--muted);
 }
 
-/* ============ SWAP MODAL ============ */
+/* SWAP MODAL */
 .swap-modal { max-width: 520px; }
 .swap-grid {
   display: grid;
@@ -696,7 +694,7 @@ body.light-mode .action-player-info { background: rgba(0,0,0,0.03); }
   background: var(--glass);
 }
 
-/* ============ PLAN COMPARE ============ */
+/* PLAN COMPARE */
 .plan-compare-content {
   background: var(--glass);
   border: 1px solid var(--glass-border);
@@ -741,7 +739,7 @@ body.light-mode .action-player-info { background: rgba(0,0,0,0.03); }
   font-style: italic;
 }
 
-/* ============ TIMELINE ============ */
+/* TIMELINE */
 .timeline-wrap { overflow-x: auto; padding-bottom: 12px; margin: 0 -20px; padding-left: 20px; padding-right: 20px; scrollbar-width: thin; }
 .timeline-wrap::-webkit-scrollbar { height: 6px; }
 .timeline-wrap::-webkit-scrollbar-thumb { background: var(--mint); border-radius: 3px; }
@@ -791,7 +789,6 @@ body.light-mode .plan-note { background: rgba(0,0,0,0.03); }
 .plan-fixture-row .opp { font-weight: 700; }
 .plan-fixture-row .diff { font-size: 0.6rem; font-weight: 800; padding: 1px 5px; border-radius: 4px; }
 
-/* BANK IMPACT + HIT WARNING */
 .plan-bank-impact { margin-top: 12px; padding: 10px 14px; background: rgba(0,255,135,0.06); border: 1px solid rgba(0,255,135,0.2); border-radius: 10px; font-size: 0.8rem; color: var(--mint); font-weight: 700; }
 .plan-bank-impact.negative { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.3); color: var(--red); }
 .plan-hit-warning { margin-top: 10px; padding: 10px 14px; background: rgba(255,185,46,0.1); border: 1px solid rgba(255,185,46,0.4); border-radius: 10px; font-size: 0.82rem; color: var(--gold); font-weight: 700; }
