@@ -57,6 +57,9 @@
         <div class="label">Deadline</div>
         <div class="value" id="hdr-deadline">—</div>
       </div>
+      <div class="sync-dot-wrap" id="sync-dot-wrap" title="Sync status">
+        <span class="sync-dot fresh" id="sync-dot"></span>
+      </div>
       <button class="btn small theme-toggle" onclick="toggleTheme()" id="theme-toggle-app" title="Toggle theme">🌙</button>
       <button class="btn small" onclick="logout()" title="Switch manager">⇄</button>
     </div>
@@ -73,15 +76,20 @@
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- ============ DASHBOARD ============ -->
+  <!-- DASHBOARD -->
   <div id="view-dashboard" class="view active">
 
     <section>
       <div class="section-title">🔄 Sync</div>
       <div class="squad-controls">
         <button class="btn primary big" onclick="syncAll(true)" id="sync-btn">🔄 Sync All from FPL</button>
-        <span class="sync-status" id="sync-status">Loads all 5 family squads + fixtures + player data</span>
+        <span class="sync-status" id="sync-status">Press S to sync · auto-syncs when tab returns</span>
       </div>
+    </section>
+
+    <section>
+      <div class="section-title">📊 This GW at a Glance</div>
+      <div id="gw-glance-banner"></div>
     </section>
 
     <section>
@@ -135,7 +143,6 @@
       <div class="timeline-wrap"><div class="timeline" id="timeline"></div></div>
     </section>
 
-    <!-- MINI PLANNER — last 3 GWs -->
     <section>
       <div class="section-title">🔄 Transfer Plans <span class="hint-inline">(next 3 GWs · <a href="#" onclick="switchView('planner', document.querySelector('[data-view=planner]'));return false;" style="color:var(--mint)">open full planner →</a>)</span></div>
       <div class="plans-list mini-plans" id="mini-plans"></div>
@@ -143,133 +150,85 @@
 
   </div>
 
-  <!-- ============ SEASON PLANNER ============ -->
+  <!-- SEASON PLANNER -->
   <div id="view-planner" class="view" style="display:none">
-
     <section>
       <div class="section-title">🗓 Full Season Planner</div>
-
-      <!-- Status bar -->
       <div class="planner-status-bar" id="planner-status-bar">
         <div class="status-pill"><span class="status-label">Bank</span><span class="status-value" id="pl-status-bank">—</span></div>
         <div class="status-pill"><span class="status-label">Squad Value</span><span class="status-value" id="pl-status-value">—</span></div>
         <div class="status-pill"><span class="status-label">Chips Remaining</span><span class="status-value" id="pl-status-chips">—</span></div>
         <div class="status-pill"><span class="status-label">Planned Transfers</span><span class="status-value" id="pl-status-transfers">—</span></div>
       </div>
-
-      <!-- Controls -->
       <div class="planner-controls">
         <button class="btn small" onclick="expandAllPlans()">⬇ Expand All</button>
         <button class="btn small" onclick="collapseAllPlans()">⬆ Collapse All</button>
         <button class="btn small" onclick="openPlanModal()">＋ New Plan</button>
       </div>
-
-      <!-- The accordion list -->
       <div class="season-planner" id="season-planner">
         <div class="empty"><span class="emoji">🗓</span>Sync to load the season planner</div>
       </div>
     </section>
-
   </div>
 
-  <!-- ============ FAMILY LEAGUE ============ -->
+  <!-- FAMILY LEAGUE -->
   <div id="view-leaderboard" class="view" style="display:none">
-
     <section>
       <div class="section-title">🔥 Weekly Roast</div>
       <div class="roast-card" id="weekly-roast">
         <div class="empty" style="padding:20px"><span class="emoji">🔥</span>Sync to see this week's roast</div>
       </div>
     </section>
-
     <section>
       <div class="section-title">🏆 Current Standings</div>
-      <div class="leaderboard-card" id="leaderboard-card">
-        <div class="empty"><span class="emoji">🏆</span>Sync to load standings</div>
-      </div>
+      <div class="leaderboard-card" id="leaderboard-card"><div class="empty"><span class="emoji">🏆</span>Sync to load standings</div></div>
     </section>
-
     <section>
       <div class="section-title">🔥 Best Gameweek</div>
-      <div class="leaderboard-card" id="best-gw-card">
-        <div class="empty"><span class="emoji">🔥</span>Sync to load</div>
-      </div>
+      <div class="leaderboard-card" id="best-gw-card"><div class="empty"><span class="emoji">🔥</span>Sync to load</div></div>
     </section>
-
     <section>
       <div class="section-title">❄️ Worst Gameweek</div>
-      <div class="leaderboard-card" id="worst-gw-card">
-        <div class="empty"><span class="emoji">❄️</span>Sync to load</div>
-      </div>
+      <div class="leaderboard-card" id="worst-gw-card"><div class="empty"><span class="emoji">❄️</span>Sync to load</div></div>
     </section>
-
     <section>
       <div class="section-title">©️ Captain Picks This GW</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <div>
           <div style="font-weight:800;font-size:0.75rem;color:var(--red);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;padding-left:8px">💀 Worst Captain</div>
-          <div class="leaderboard-card" id="worst-captain-card">
-            <div class="empty"><span class="emoji">💀</span>Sync to load</div>
-          </div>
+          <div class="leaderboard-card" id="worst-captain-card"><div class="empty"><span class="emoji">💀</span>Sync to load</div></div>
         </div>
         <div>
           <div style="font-weight:800;font-size:0.75rem;color:var(--gold);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;padding-left:8px">👑 Best Captain</div>
-          <div class="leaderboard-card" id="best-captain-card">
-            <div class="empty"><span class="emoji">👑</span>Sync to load</div>
-          </div>
+          <div class="leaderboard-card" id="best-captain-card"><div class="empty"><span class="emoji">👑</span>Sync to load</div></div>
         </div>
       </div>
     </section>
-
     <section>
       <div class="section-title">🏅 Trophy Cabinet — GW Winners</div>
-      <div class="leaderboard-card" id="trophy-cabinet">
-        <div class="empty"><span class="emoji">🏅</span>Sync to load</div>
-      </div>
+      <div class="leaderboard-card" id="trophy-cabinet"><div class="empty"><span class="emoji">🏅</span>Sync to load</div></div>
     </section>
-
     <section>
       <div class="section-title">📊 This Week at a Glance</div>
-      <div class="leaderboard-card" id="weekly-glance">
-        <div class="empty"><span class="emoji">📅</span>Sync to see stats</div>
-      </div>
+      <div class="leaderboard-card" id="weekly-glance"><div class="empty"><span class="emoji">📅</span>Sync to see stats</div></div>
     </section>
-
   </div>
 
-  <!-- ============ HISTORY ============ -->
+  <!-- HISTORY -->
   <div id="view-history" class="view" style="display:none">
-
-    <section>
-      <div class="section-title">📈 Points per Gameweek</div>
-      <div class="chart-card">
-        <div id="chart-points" class="empty"><span class="emoji">📈</span>Sync to see your chart</div>
-      </div>
+    <section><div class="section-title">📈 Points per Gameweek</div>
+      <div class="chart-card"><div id="chart-points" class="empty"><span class="emoji">📈</span>Sync to see your chart</div></div>
     </section>
-
-    <section>
-      <div class="section-title">🏅 Overall Rank</div>
-      <div class="chart-card">
-        <div id="chart-rank" class="empty"><span class="emoji">🏅</span>Sync to see your rank progression</div>
-      </div>
+    <section><div class="section-title">🏅 Overall Rank</div>
+      <div class="chart-card"><div id="chart-rank" class="empty"><span class="emoji">🏅</span>Sync to see your rank progression</div></div>
     </section>
-
-    <section>
-      <div class="section-title">⚖️ You vs Average</div>
-      <div class="chart-card">
-        <div id="chart-average" class="empty"><span class="emoji">⚖️</span>Sync to compare</div>
-      </div>
+    <section><div class="section-title">⚖️ You vs Average</div>
+      <div class="chart-card"><div id="chart-average" class="empty"><span class="emoji">⚖️</span>Sync to compare</div></div>
     </section>
-
-    <section>
-      <div class="section-title">🃏 Chip Usage</div>
-      <div class="chart-card" id="chip-tracker">
-        <div class="empty"><span class="emoji">🃏</span>Sync to see chips</div>
-      </div>
+    <section><div class="section-title">🃏 Chip Usage</div>
+      <div class="chart-card" id="chip-tracker"><div class="empty"><span class="emoji">🃏</span>Sync to see chips</div></div>
     </section>
-
-    <section>
-      <div class="section-title">📋 Gameweek Table</div>
+    <section><div class="section-title">📋 Gameweek Table</div>
       <div class="gw-table-wrap">
         <table class="gw-table" id="gw-table">
           <thead><tr><th>GW</th><th>Points</th><th>Rank</th><th>Bank</th><th>Value</th><th>Transfers</th></tr></thead>
@@ -277,10 +236,9 @@
         </table>
       </div>
     </section>
-
   </div>
 
-  <!-- ============ PLAYERS ============ -->
+  <!-- PLAYERS -->
   <div id="view-players" class="view" style="display:none">
     <section>
       <div class="section-title">🔍 Search Players</div>
@@ -288,10 +246,8 @@
         <input type="text" id="player-search" placeholder="Search by name or team..." oninput="renderPlayers()" autocomplete="off">
         <select id="player-filter-pos" onchange="renderPlayers()">
           <option value="">All positions</option>
-          <option value="GK">GK</option>
-          <option value="DEF">DEF</option>
-          <option value="MID">MID</option>
-          <option value="FWD">FWD</option>
+          <option value="GK">GK</option><option value="DEF">DEF</option>
+          <option value="MID">MID</option><option value="FWD">FWD</option>
         </select>
         <select id="player-sort" onchange="renderPlayers()">
           <option value="total_points">Sort: Points</option>
@@ -309,23 +265,20 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v5 · Data saved in your browser · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a>
+  ⚡ FPL Command Center v6 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
 
-<!-- ============ MODALS ============ -->
+<!-- MODALS -->
 
 <div class="modal-overlay" id="player-modal">
   <div class="modal">
     <h3 id="player-modal-title">Add Player</h3>
-    <div class="field"><label>Player Name</label><input type="text" id="p-name" placeholder="e.g. Mohamed Salah"></div>
+    <div class="field"><label>Player Name</label><input type="text" id="p-name" placeholder="e.g. Mohamed Salah" autocomplete="off" list="all-players-list"><datalist id="all-players-list"></datalist></div>
     <div class="field-row">
       <div class="field"><label>Position</label>
-        <select id="p-pos">
-          <option value="GK">GK</option><option value="DEF">DEF</option>
-          <option value="MID" selected>MID</option><option value="FWD">FWD</option>
-        </select>
+        <select id="p-pos"><option value="GK">GK</option><option value="DEF">DEF</option><option value="MID" selected>MID</option><option value="FWD">FWD</option></select>
       </div>
       <div class="field"><label>Price (£m)</label><input type="number" id="p-price" step="0.1" min="3.5" max="20"></div>
     </div>
@@ -360,33 +313,38 @@
   </div>
 </div>
 
-<!-- PLAN MODAL -->
 <div class="modal-overlay" id="plan-modal">
   <div class="modal">
     <h3 id="plan-modal-title">Add Transfer Plan</h3>
     <div class="field"><label>Gameweek</label><input type="number" id="pl-gw" min="1" max="38" value="1"></div>
-
     <div class="field-row">
-      <div class="field"><label>OUT — Player</label><input type="text" id="pl-out" placeholder="Player out"></div>
+      <div class="field">
+        <label>OUT — Player</label>
+        <input type="text" id="pl-out" placeholder="Start typing..." autocomplete="off" list="squad-players-list" oninput="onOutPlayerChange()">
+        <datalist id="squad-players-list"></datalist>
+      </div>
       <div class="field"><label>OUT — Price (£m)</label><input type="number" id="pl-out-price" step="0.1"></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>IN — Player</label><input type="text" id="pl-in" placeholder="Player in"></div>
+      <div class="field">
+        <label>IN — Player</label>
+        <input type="text" id="pl-in" placeholder="Start typing..." autocomplete="off" list="all-players-list2" oninput="onInPlayerChange()">
+        <datalist id="all-players-list2"></datalist>
+      </div>
       <div class="field"><label>IN — Price (£m)</label><input type="number" id="pl-in-price" step="0.1"></div>
     </div>
-
     <div class="field-row">
       <div class="field">
         <label>👑 Captain for this GW</label>
-        <input type="text" id="pl-captain" placeholder="e.g. Salah" list="captain-options" autocomplete="off">
+        <input type="text" id="pl-captain" placeholder="e.g. Salah" autocomplete="off" list="captain-options">
         <datalist id="captain-options"></datalist>
       </div>
       <div class="field">
         <label>🎗️ Vice-Captain</label>
-        <input type="text" id="pl-vice" placeholder="e.g. Palmer" autocomplete="off">
+        <input type="text" id="pl-vice" placeholder="e.g. Palmer" autocomplete="off" list="captain-options-2">
+        <datalist id="captain-options-2"></datalist>
       </div>
     </div>
-
     <div class="field-row">
       <div class="field"><label>Chip (optional)</label>
         <select id="pl-chip">
@@ -401,15 +359,13 @@
         <input type="number" id="pl-ft-after" min="0" max="5" step="1" placeholder="e.g. 1">
       </div>
     </div>
-
     <div class="field">
       <label>📝 Note / reasoning</label>
       <textarea id="pl-note" placeholder="e.g. Fixtures swing, differential pick..." style="min-height:70px"></textarea>
     </div>
-
-    <!-- FIXTURES PREVIEW -->
+    <div id="pl-bank-impact" class="plan-bank-impact"></div>
+    <div id="pl-hit-warning" class="plan-hit-warning" style="display:none"></div>
     <div id="pl-fixtures-preview" class="fixtures-preview"></div>
-
     <div class="modal-actions">
       <button class="btn danger" onclick="deletePlanFromModal()" id="pl-delete-btn" style="display:none;margin-right:auto">🗑 Delete</button>
       <button class="btn" onclick="closeModal('plan-modal')">Cancel</button>
@@ -418,17 +374,42 @@
   </div>
 </div>
 
+<!-- PERFORMANCE MODAL -->
+<div class="modal-overlay" id="perf-modal">
+  <div class="modal perf-modal">
+    <div id="perf-modal-content"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="help-modal">
   <div class="modal">
     <h3>❓ How it works</h3>
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
-      <p><strong style="color:var(--text)">1. Your data lives on your device.</strong> Use <em>Export</em> to back it up.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">2. Everyone has their own workspace.</strong> Pick your name on the welcome screen.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Click 🔄 Sync All</strong> to load everything automatically.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Season Planner tab</strong> — see all 38 GWs with plans, captain, chip, and fixtures. Past GWs show predicted vs actual.</p>
+      <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh data when you return to the tab (if >30 min old).</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">2. Autocomplete everywhere</strong> — start typing any player name, pick from suggestions.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Player details</strong> — click any squad card to see full performance breakdown.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. Season Planner</strong> — plan every GW, see past GWs side-by-side.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="shortcuts-modal">
+  <div class="modal">
+    <h3>⌨️ Keyboard Shortcuts</h3>
+    <div class="shortcuts-list">
+      <div class="shortcut-row"><kbd>N</kbd><span>New transfer plan</span></div>
+      <div class="shortcut-row"><kbd>S</kbd><span>Sync from FPL</span></div>
+      <div class="shortcut-row"><kbd>D</kbd><span>Dashboard tab</span></div>
+      <div class="shortcut-row"><kbd>P</kbd><span>Season Planner tab</span></div>
+      <div class="shortcut-row"><kbd>L</kbd><span>Family League tab</span></div>
+      <div class="shortcut-row"><kbd>H</kbd><span>My History tab</span></div>
+      <div class="shortcut-row"><kbd>Esc</kbd><span>Close any modal</span></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" onclick="closeModal('shortcuts-modal')">Got it</button>
     </div>
   </div>
 </div>
