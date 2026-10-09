@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v8 — app.js
-   Planning Mode Edition
+   FPL Command Center v9 — app.js
+   Photo Fix + Action Modal Everywhere
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -53,10 +53,9 @@ let syncTimer = null;
 let isSyncing = false;
 let squadView = localStorage.getItem('fpl-cc-squad-view') || 'pitch';
 
-// Planning mode state
 let planningMode = false;
 let planningGW = null;
-let plannedTeam = null; // { starters: [playerIds], bench: [playerIds], captain: id, vice: id }
+let plannedTeam = null;
 let actionPlayerId = null;
 let swapTargetId = null;
 let swapIsBench = false;
@@ -68,7 +67,7 @@ function emptyState() {
     managerName: '', bootstrap: null, familyData: null,
     currentGW: null, nextGW: null, nextDeadline: null, lastSync: 0,
     priceRisers: [], priceFallers: [],
-    plannedTeams: {}, // { gw: { starters, bench, captain, vice } }
+    plannedTeams: {},
   };
 }
 function loadFor(id) {
@@ -192,9 +191,8 @@ async function fpl(path) {
   return res.json();
 }
 function playerImgUrl(el) {
-  if (!el || !el.photo) return '';
-  const ext = el.photo.replace(/^\D+/, '').replace('.jpg', '');
-  return `${IMG_BASE}/${ext}.png`;
+  if (!el || !el.code) return '';
+  return `${IMG_BASE}/p${el.code}.png`;
 }
 function getTeamInfo(teamIdNum) {
   if (!state.bootstrap) return { name: '?', short: '?', badge: '' };
@@ -762,13 +760,11 @@ function renderPitchView(container, planning) {
   let starters, bench;
 
   if (planning && plannedTeam) {
-    // Use planned team
     const startersIds = plannedTeam.starters;
     const benchIds = plannedTeam.bench;
     starters = startersIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
     bench = benchIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
   } else {
-    // Use current team
     starters = state.players.filter(p => !p.bench);
     bench = state.players.filter(p => p.bench);
   }
@@ -794,7 +790,7 @@ function renderPitchView(container, planning) {
     const injuryBadge = injury ? '<div class="pitch-badge-inj">⚠️</div>' : '';
     const numBadge = isBench && benchNum ? `<div class="pitch-badge-num">${benchNum}</div>` : '';
     const ptsClass = livePts > 2 ? '' : 'blank';
-    const onClick = planning ? `openActionModal('${p.id}')` : `openPerfModal('${p.id}')`;
+    const onClick = `openActionModal('${p.id}')`;
     return `
       <div class="pitch-card ${isCap ? 'captain' : ''} ${isVC ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="${onClick}">
         ${badge}
@@ -846,7 +842,6 @@ function renderTeamView() {
     return;
   }
 
-  // Summary banner
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
   const latest = current[current.length - 1];
@@ -892,7 +887,6 @@ function renderTeamView() {
 
   renderPitchView(pitch, planningMode);
 
-  // Plan button state
   if (planBtn) {
     if (planningMode) {
       planBtn.style.display = 'none';
@@ -903,7 +897,6 @@ function renderTeamView() {
     }
   }
 
-  // Plan comparison view
   if (planCompare) {
     const nextGW = state.nextGW || state.currentGW + 1;
     const savedPlan = state.plannedTeams?.[nextGW];
@@ -927,33 +920,17 @@ function renderPlanCompare(gw, plan) {
 
   const changes = [];
 
-  // Captain change
   if (plan.captain !== currentCap) {
     const from = state.players.find(p => p.id === currentCap);
     const to = state.players.find(p => p.id === plan.captain);
-    if (to) {
-      changes.push({
-        label: 'Captain',
-        from: from ? from.name : 'None',
-        to: to.name,
-      });
-    }
+    if (to) changes.push({ label: 'Captain', from: from ? from.name : 'None', to: to.name });
   }
-
-  // Vice change
   if (plan.vice !== currentVC) {
     const from = state.players.find(p => p.id === currentVC);
     const to = state.players.find(p => p.id === plan.vice);
-    if (to) {
-      changes.push({
-        label: 'Vice',
-        from: from ? from.name : 'None',
-        to: to.name,
-      });
-    }
+    if (to) changes.push({ label: 'Vice', from: from ? from.name : 'None', to: to.name });
   }
 
-  // Starting XI changes
   const movedToBench = currentStarters.filter(id => !plan.starters.includes(id));
   const movedToStart = currentBench.filter(id => plan.starters.includes(id));
 
@@ -966,7 +943,6 @@ function renderPlanCompare(gw, plan) {
     if (p) changes.push({ label: '⬆ Start', from: 'Bench', to: p.name });
   });
 
-  // Bench order changes
   const benchChanged = currentBench.some((id, i) => plan.bench[i] !== id);
   if (benchChanged && !movedToBench.length && !movedToStart.length) {
     changes.push({ label: 'Bench order', from: 'Changed', to: 'Reordered' });
@@ -1004,7 +980,6 @@ function enterPlanningMode() {
   planningMode = true;
   planningGW = nextGW;
 
-  // Load saved plan or init from current team
   const saved = state.plannedTeams?.[nextGW];
   if (saved) {
     plannedTeam = { ...saved };
@@ -1079,9 +1054,17 @@ function openActionModal(playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
 
-  const inStarters = plannedTeam?.starters.includes(p.id);
-  const isCap = plannedTeam?.captain === p.id;
-  const isVC = plannedTeam?.vice === p.id;
+  const inPlanning = planningMode && plannedTeam;
+  const activeTeam = inPlanning ? plannedTeam : {
+    starters: state.players.filter(x => !x.bench).map(x => x.id),
+    bench: state.players.filter(x => x.bench).map(x => x.id),
+    captain: state.players.find(x => x.captain)?.id || null,
+    vice: state.players.find(x => x.vice)?.id || null,
+  };
+
+  const inStarters = activeTeam.starters.includes(p.id);
+  const isCap = activeTeam.captain === p.id;
+  const isVC = activeTeam.vice === p.id;
 
   const title = document.getElementById('action-modal-title');
   const content = document.getElementById('action-modal-content');
@@ -1090,7 +1073,14 @@ function openActionModal(playerId) {
   const live = liveDataCache[state.currentGW]?.[p.fplId];
   const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
 
+  const previewBanner = !inPlanning ? `
+    <div style="background:rgba(4,245,255,0.1);border:1px solid rgba(4,245,255,0.3);border-radius:10px;padding:10px 12px;font-size:0.75rem;color:var(--cyan);margin-bottom:12px">
+      💡 <strong>Preview mode</strong> — changes here don't affect your real team. To save a plan, click <strong>🗓 Plan Next GW</strong>.
+    </div>
+  ` : '';
+
   content.innerHTML = `
+    ${previewBanner}
     <div class="action-player-info">
       ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
       <div class="info-text">
@@ -1145,6 +1135,11 @@ function openActionModal(playerId) {
 }
 
 function setCaptainFromAction(playerId) {
+  if (!planningMode) {
+    toast('Enable Planning Mode to make changes', true);
+    closeModal('action-modal');
+    return;
+  }
   if (!plannedTeam) return;
   plannedTeam.captain = playerId;
   if (playerId && plannedTeam.vice === playerId) plannedTeam.vice = null;
@@ -1154,6 +1149,11 @@ function setCaptainFromAction(playerId) {
 }
 
 function setViceFromAction(playerId) {
+  if (!planningMode) {
+    toast('Enable Planning Mode to make changes', true);
+    closeModal('action-modal');
+    return;
+  }
   if (!plannedTeam) return;
   plannedTeam.vice = playerId;
   if (playerId && plannedTeam.captain === playerId) plannedTeam.captain = null;
@@ -1163,11 +1163,9 @@ function setViceFromAction(playerId) {
 }
 
 function moveToBench(playerId) {
-  if (!plannedTeam) return;
-  // Find 1st sub (index 0 in bench) to swap with
+  if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   if (plannedTeam.bench.length === 0) return;
   const firstSub = plannedTeam.bench[0];
-  // If moving GK to bench, need to swap with bench GK (index 3)
   const p = state.players.find(x => x.id === playerId);
   let swapIdx = 0;
   if (p.pos === 'GK') {
@@ -1178,7 +1176,6 @@ function moveToBench(playerId) {
   plannedTeam.starters = plannedTeam.starters.filter(id => id !== playerId);
   plannedTeam.starters.push(swapId);
   plannedTeam.bench[swapIdx] = playerId;
-  // Clear captain/vice if they were moved to bench
   if (plannedTeam.captain === playerId) plannedTeam.captain = null;
   if (plannedTeam.vice === playerId) plannedTeam.vice = null;
   closeModal('action-modal');
@@ -1187,36 +1184,31 @@ function moveToBench(playerId) {
 }
 
 function moveToStarters(playerId) {
-  if (!plannedTeam) return;
+  if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   const p = state.players.find(x => x.id === playerId);
-  // Find a starter to swap with (same position ideally)
   const starterIds = plannedTeam.starters;
   const samePos = starterIds.find(id => state.players.find(x => x.id === id)?.pos === p.pos);
   const target = samePos || starterIds[starterIds.length - 1];
   if (!target) return;
-
   const benchIdx = plannedTeam.bench.indexOf(playerId);
   const targetIdx = plannedTeam.starters.indexOf(target);
   if (benchIdx === -1 || targetIdx === -1) return;
-
   plannedTeam.bench[benchIdx] = target;
   plannedTeam.starters[targetIdx] = playerId;
-
   if (plannedTeam.captain === target) plannedTeam.captain = null;
   if (plannedTeam.vice === target) plannedTeam.vice = null;
-
   closeModal('action-modal');
   renderTeamView();
   toast('⬆️ Moved to starting XI');
 }
 
 function openSwapModal(playerId) {
+  if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   actionPlayerId = playerId;
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
 
-  const inStarters = plannedTeam?.starters.includes(p.id);
-  // Show opposite side
+  const inStarters = plannedTeam.starters.includes(p.id);
   const candidates = inStarters
     ? plannedTeam.bench.map(id => state.players.find(x => x.id === id)).filter(Boolean)
     : plannedTeam.starters.map(id => state.players.find(x => x.id === id)).filter(Boolean);
@@ -1239,7 +1231,6 @@ function openSwapModal(playerId) {
   }
 
   content.innerHTML = `<div class="swap-grid">${candidates.map(c => {
-    // Check validity: must maintain 1 GK in XI, 3 DEF, 2 MID, 1 FWD
     const isValid = canSwap(p, c, inStarters);
     return `
       <button class="swap-option ${isValid ? '' : 'disabled'}" ${isValid ? `onclick="doSwap('${c.id}')"` : 'disabled'}>
@@ -1256,41 +1247,31 @@ function openSwapModal(playerId) {
 }
 
 function canSwap(p1, p2, p1InStarters) {
-  // If both same position, always OK (swap within formation)
   if (p1.pos === p2.pos) return true;
-
-  // If p1 is going to bench and p2 comes in, need to check formation validity
   const tempStarters = [...plannedTeam.starters];
   const tempBench = [...plannedTeam.bench];
-
   if (p1InStarters) {
-    // p1 out, p2 in
     const i1 = tempStarters.indexOf(p1.id);
     const i2 = tempBench.indexOf(p2.id);
     if (i1 === -1 || i2 === -1) return false;
     tempStarters[i1] = p2.id;
     tempBench[i2] = p1.id;
   } else {
-    // p1 in, p2 out
     const i1 = tempBench.indexOf(p1.id);
     const i2 = tempStarters.indexOf(p2.id);
     if (i1 === -1 || i2 === -1) return false;
     tempBench[i1] = p2.id;
     tempStarters[i2] = p1.id;
   }
-
   const starters = tempStarters.map(id => state.players.find(x => x.id === id)).filter(Boolean);
   const gk = starters.filter(p => p.pos === 'GK').length;
   const def = starters.filter(p => p.pos === 'DEF').length;
   const mid = starters.filter(p => p.pos === 'MID').length;
   const fwd = starters.filter(p => p.pos === 'FWD').length;
-
-  // FPL rules: 1 GK, 3-5 DEF, 2-5 MID, 1-3 FWD
   if (gk !== 1) return false;
   if (def < 3 || def > 5) return false;
   if (mid < 2 || mid > 5) return false;
   if (fwd < 1 || fwd > 3) return false;
-
   return true;
 }
 
@@ -1313,11 +1294,8 @@ function doSwap(targetId) {
     plannedTeam.bench[i1] = p2;
     plannedTeam.starters[i2] = p1;
   }
-
-  // Clear captain/vice if moved to bench
   if (plannedTeam.bench.includes(plannedTeam.captain)) plannedTeam.captain = null;
   if (plannedTeam.bench.includes(plannedTeam.vice)) plannedTeam.vice = null;
-
   closeModal('swap-modal');
   closeModal('action-modal');
   renderTeamView();
