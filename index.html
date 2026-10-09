@@ -70,13 +70,14 @@
 
   <div class="main-nav">
     <button class="main-tab active" data-view="dashboard" onclick="switchView('dashboard', this)"><span class="tab-emoji">📊</span> <span class="tab-text">Dashboard</span></button>
-    <button class="main-tab" data-view="planner" onclick="switchView('planner', this)"><span class="tab-emoji">🗓</span> <span class="tab-text">Season Planner</span></button>
-    <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)"><span class="tab-emoji">🏆</span> <span class="tab-text">Family League</span></button>
-    <button class="main-tab" data-view="history" onclick="switchView('history', this)"><span class="tab-emoji">📈</span> <span class="tab-text">My History</span></button>
+    <button class="main-tab" data-view="team" onclick="switchView('team', this)"><span class="tab-emoji">⚽</span> <span class="tab-text">My Team</span></button>
+    <button class="main-tab" data-view="planner" onclick="switchView('planner', this)"><span class="tab-emoji">🗓</span> <span class="tab-text">Planner</span></button>
+    <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)"><span class="tab-emoji">🏆</span> <span class="tab-text">League</span></button>
+    <button class="main-tab" data-view="history" onclick="switchView('history', this)"><span class="tab-emoji">📈</span> <span class="tab-text">History</span></button>
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- DASHBOARD -->
+  <!-- ============ DASHBOARD ============ -->
   <div id="view-dashboard" class="view active">
 
     <section>
@@ -124,7 +125,12 @@
     </section>
 
     <section>
-      <div class="section-title">👥 My Squad <span class="hint-inline">(XI on top · bench below)</span></div>
+      <div class="section-title">
+        👥 My Squad
+        <span class="hint-inline">
+          <button class="view-toggle" id="view-toggle-dashboard" onclick="toggleSquadView()">📋 List</button>
+        </span>
+      </div>
       <div class="squad-controls">
         <button class="btn primary" onclick="openPlayerModal()">＋ Add Player</button>
         <button class="btn" onclick="openBudgetModal()">💰 Set Budget</button>
@@ -133,8 +139,12 @@
         <button class="btn" onclick="exportData()">⬇ Export</button>
         <button class="btn danger" onclick="resetAll()">🗑 Reset</button>
       </div>
-      <div class="squad-grid" id="squad-grid">
-        <div class="empty" style="grid-column:1/-1"><span class="emoji">👥</span>Click <strong>🔄 Sync All</strong> to load your squad</div>
+      <!-- Squad container — swaps between grid and pitch -->
+      <div id="squad-container">
+        <div class="squad-grid" id="squad-grid">
+          <div class="empty" style="grid-column:1/-1"><span class="emoji">👥</span>Click <strong>🔄 Sync All</strong> to load your squad</div>
+        </div>
+        <div class="pitch-view" id="pitch-view-dashboard" style="display:none"></div>
       </div>
     </section>
 
@@ -150,7 +160,27 @@
 
   </div>
 
-  <!-- SEASON PLANNER -->
+  <!-- ============ MY TEAM (Pitch View) ============ -->
+  <div id="view-team" class="view" style="display:none">
+    <section>
+      <div class="section-title">
+        ⚽ My Team
+        <span class="hint-inline">
+          <button class="view-toggle" onclick="toggleSquadView()" id="view-toggle-team">📋 List</button>
+        </span>
+      </div>
+
+      <div id="team-summary-banner" class="team-summary-banner"></div>
+
+      <div id="team-container">
+        <div class="pitch-view" id="pitch-view-team">
+          <div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ SEASON PLANNER ============ -->
   <div id="view-planner" class="view" style="display:none">
     <section>
       <div class="section-title">🗓 Full Season Planner</div>
@@ -171,7 +201,7 @@
     </section>
   </div>
 
-  <!-- FAMILY LEAGUE -->
+  <!-- ============ FAMILY LEAGUE ============ -->
   <div id="view-leaderboard" class="view" style="display:none">
     <section>
       <div class="section-title">🔥 Weekly Roast</div>
@@ -214,7 +244,7 @@
     </section>
   </div>
 
-  <!-- HISTORY -->
+  <!-- ============ HISTORY ============ -->
   <div id="view-history" class="view" style="display:none">
     <section><div class="section-title">📈 Points per Gameweek</div>
       <div class="chart-card"><div id="chart-points" class="empty"><span class="emoji">📈</span>Sync to see your chart</div></div>
@@ -238,7 +268,7 @@
     </section>
   </div>
 
-  <!-- PLAYERS -->
+  <!-- ============ PLAYERS ============ -->
   <div id="view-players" class="view" style="display:none">
     <section>
       <div class="section-title">🔍 Search Players</div>
@@ -265,7 +295,7 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v6 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v7 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
@@ -386,9 +416,9 @@
     <h3>❓ How it works</h3>
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh data when you return to the tab (if >30 min old).</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">2. Autocomplete everywhere</strong> — start typing any player name, pick from suggestions.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Player details</strong> — click any squad card to see full performance breakdown.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Season Planner</strong> — plan every GW, see past GWs side-by-side.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">2. Pitch View</strong> — see your team in real formation on a pitch. Toggle to List anytime.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Autocomplete everywhere</strong> — start typing any player name.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. Player details</strong> — click any player to see full performance breakdown.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
@@ -403,9 +433,11 @@
       <div class="shortcut-row"><kbd>N</kbd><span>New transfer plan</span></div>
       <div class="shortcut-row"><kbd>S</kbd><span>Sync from FPL</span></div>
       <div class="shortcut-row"><kbd>D</kbd><span>Dashboard tab</span></div>
+      <div class="shortcut-row"><kbd>T</kbd><span>My Team tab</span></div>
       <div class="shortcut-row"><kbd>P</kbd><span>Season Planner tab</span></div>
       <div class="shortcut-row"><kbd>L</kbd><span>Family League tab</span></div>
       <div class="shortcut-row"><kbd>H</kbd><span>My History tab</span></div>
+      <div class="shortcut-row"><kbd>V</kbd><span>Toggle Pitch / List view</span></div>
       <div class="shortcut-row"><kbd>Esc</kbd><span>Close any modal</span></div>
     </div>
     <div class="modal-actions">
