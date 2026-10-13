@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v9 — app.js
-   Photo Fix + Action Modal Everywhere
+   FPL Command Center v10 — app.js
+   GW auto-detect · Planner auto-advance · Mobile UX
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -68,6 +68,7 @@ function emptyState() {
     currentGW: null, nextGW: null, nextDeadline: null, lastSync: 0,
     priceRisers: [], priceFallers: [],
     plannedTeams: {},
+    lastKnownGW: 0,
   };
 }
 function loadFor(id) {
@@ -88,6 +89,7 @@ function saveState() {
     lastSync: state.lastSync,
     priceRisers: state.priceRisers, priceFallers: state.priceFallers,
     plannedTeams: state.plannedTeams || {},
+    lastKnownGW: state.lastKnownGW || 0,
   };
   try { localStorage.setItem(storageKey(teamId), JSON.stringify(toSave)); }
   catch (e) { toast('Storage full — export a backup', true); }
@@ -102,7 +104,7 @@ function toast(msg, isError = false) {
   t.textContent = msg;
   t.className = 'toast' + (isError ? ' error' : '');
   requestAnimationFrame(() => t.classList.add('show'));
-  setTimeout(() => t.classList.remove('show'), 3000);
+  setTimeout(() => t.classList.remove('show'), 3200);
 }
 function randomQuote(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function fmtRank(r) { if (!r || r <= 0) return '—'; return '#' + r.toLocaleString(); }
@@ -305,14 +307,25 @@ async function syncAll(showToast = true) {
   try {
     const boot = await fpl('/bootstrap-static/');
     state.bootstrap = { elements: boot.elements, teams: boot.teams, events: boot.events };
-    const finished = boot.events.filter(e => e.finished);
+
+    // Smart GW detection
+    const liveGW = boot.events.find(e => e.is_current);
+    const nextGW = boot.events.find(e => e.is_next);
+    const finishedGWs = boot.events.filter(e => e.finished);
+
     let currentGW;
-    if (finished.length > 0) currentGW = Math.max(...finished.map(e => e.id));
-    else currentGW = boot.events.find(e => e.is_next)?.id || 1;
+    if (liveGW) {
+      currentGW = liveGW.id;
+    } else if (finishedGWs.length > 0) {
+      currentGW = Math.max(...finishedGWs.map(e => e.id));
+    } else if (nextGW) {
+      currentGW = Math.max(1, nextGW.id - 1);
+    } else {
+      currentGW = 1;
+    }
     state.currentGW = currentGW;
-    const nextEv = boot.events.find(e => e.is_next) || boot.events.find(e => !e.finished);
-    state.nextGW = nextEv?.id || null;
-    state.nextDeadline = nextEv?.deadline_time || null;
+    state.nextGW = nextGW?.id || null;
+    state.nextDeadline = nextGW?.deadline_time || null;
 
     const familyData = [];
     for (const m of FAMILY) {
@@ -363,6 +376,13 @@ async function syncAll(showToast = true) {
 
 function archiveOldPlans() {
   const current = state.currentGW || 1;
+  const prevGW = state.lastKnownGW || 0;
+  if (prevGW > 0 && prevGW < current) {
+    setTimeout(() => {
+      toast(`🗓 GW${prevGW} finished. Advanced to GW${current}. Check your plans!`);
+    }, 1500);
+  }
+  state.lastKnownGW = current;
   state.plans = state.plans.filter(p => {
     if (p.gw >= current) return true;
     return p.outName || p.inName || p.captain || p.chip || p.note;
@@ -513,6 +533,13 @@ function startCountdown() {
     else if (h > 0) el.textContent = `${h}h ${m}m ${s}s`;
     else el.textContent = `${m}m ${s}s`;
     if (wrap) wrap.classList.toggle('urgent', diff < 6 * 3600000);
+    const focusDeadline = document.getElementById('focus-deadline');
+    if (focusDeadline) {
+      if (diff <= 0) focusDeadline.textContent = '🔴 Live now';
+      else if (d > 0) focusDeadline.textContent = `⏰ Deadline in ${d}d ${h}h`;
+      else if (h > 0) focusDeadline.textContent = `⏰ Deadline in ${h}h ${m}m`;
+      else focusDeadline.textContent = `⏰ Deadline in ${m}m`;
+    }
   }
   tick();
   setInterval(tick, 1000);
@@ -575,12 +602,49 @@ function renderGWGlanceBanner() {
   const best = withLive[0];
   const worst = withLive[withLive.length - 1];
   const capPts = state.players.find(p => p.captain);
+
+  // Dynamic roast quotes
+  const teamPts = latest.points || 0;
+  const teamQuote = teamPts > 60 ? `"${teamPts} pts. That's a haul!"` :
+                    teamPts > 45 ? `"${teamPts} pts. Solid week."` :
+                    teamPts > 30 ? `"${teamPts} pts. Could be worse."` :
+                    `"${teamPts} pts. Send help."`;
+  const bestQuote = best ? (best.pts >= 15 ? `"${best.pts} pts. Someone bring the stretcher!"` :
+                            best.pts >= 10 ? `"${best.pts} pts. Carried the team."` :
+                            `"Top score this week. Barely."`) : '';
+  const worstQuote = worst ? (worst.pts <= 1 ? `"${worst.pts} pts. Even the bench outscored him."` :
+                              worst.pts <= 2 ? `"${worst.pts} pts. Rough day."` :
+                              `"${worst.pts} pts. Quiet week."`) : '';
+  const capQuote = capPts ? (capPts.gwPoints >= 10 ? `"©️ delivered. Big brain move."` :
+                             capPts.gwPoints >= 4 ? `"©️ did OK."` :
+                             `"©️ blanked. Ouch."`) : '';
+
   el.innerHTML = `
     <div class="gw-glance-banner">
-      <div class="glance-stat"><div class="label">This GW</div><div class="value good">${latest.points} pts</div><div class="sub">Rank ${fmtRank(latest.overall_rank)}</div></div>
-      <div class="glance-stat"><div class="label">🔥 Best Player</div><div class="value good">${best ? best.pts : 0}</div><div class="sub">${best ? escapeHtml(best.name) : '—'}</div></div>
-      <div class="glance-stat"><div class="label">💀 Worst Player</div><div class="value bad">${worst ? worst.pts : 0}</div><div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div></div>
-      <div class="glance-stat"><div class="label">©️ Captain</div><div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div><div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div></div>
+      <div class="glance-stat">
+        <div class="label">This GW</div>
+        <div class="value good">${teamPts} pts</div>
+        <div class="sub">Rank ${fmtRank(latest.overall_rank)}</div>
+        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${teamQuote}</div>
+      </div>
+      <div class="glance-stat">
+        <div class="label">🔥 Best Player</div>
+        <div class="value good">${best ? best.pts : 0}</div>
+        <div class="sub">${best ? escapeHtml(best.name) : '—'}</div>
+        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${bestQuote}</div>
+      </div>
+      <div class="glance-stat">
+        <div class="label">💀 Worst Player</div>
+        <div class="value bad">${worst ? worst.pts : 0}</div>
+        <div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div>
+        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${worstQuote}</div>
+      </div>
+      <div class="glance-stat">
+        <div class="label">©️ Captain</div>
+        <div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div>
+        <div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div>
+        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${capQuote}</div>
+      </div>
     </div>`;
 }
 
@@ -724,7 +788,7 @@ function renderSquadList(grid) {
     const live = liveDataCache[state.currentGW]?.[p.fplId];
     const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
     return `
-      <div class="player-card ${p.bench ? 'bench' : ''} ${p.captain ? 'captain-card' : ''}" data-pos="${p.pos}" onclick="openPerfModal('${p.id}')">
+      <div class="player-card ${p.bench ? 'bench' : ''} ${p.captain ? 'captain-card' : ''}" data-pos="${p.pos}" onclick="openActionModal('${p.id}')">
         ${p.captain ? '<div class="captain-badge">C</div>' : ''}
         ${p.vice ? '<div class="vc-badge">V</div>' : ''}
         ${injury ? '<div class="injury-warn" title="' + escapeHtml(p.news || 'Injury doubt') + '">⚠️</div>' : ''}
@@ -750,7 +814,7 @@ function getSortedPlayers() {
   return [...state.players].sort((a,b) => POS_ORDER[a.pos] - POS_ORDER[b.pos] || b.price - a.price);
 }
 
-/* ========== PITCH VIEW (FACES) ========== */
+/* ========== PITCH VIEW ========== */
 function renderPitchView(container, planning) {
   if (state.players.length === 0) {
     container.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
@@ -760,10 +824,8 @@ function renderPitchView(container, planning) {
   let starters, bench;
 
   if (planning && plannedTeam) {
-    const startersIds = plannedTeam.starters;
-    const benchIds = plannedTeam.bench;
-    starters = startersIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
-    bench = benchIds.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+    starters = plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean);
+    bench = plannedTeam.bench.map(id => state.players.find(p => p.id === id)).filter(Boolean);
   } else {
     starters = state.players.filter(p => !p.bench);
     bench = state.players.filter(p => p.bench);
@@ -1074,7 +1136,7 @@ function openActionModal(playerId) {
   const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
 
   const previewBanner = !inPlanning ? `
-    <div style="background:rgba(4,245,255,0.1);border:1px solid rgba(4,245,255,0.3);border-radius:10px;padding:10px 12px;font-size:0.75rem;color:var(--cyan);margin-bottom:12px">
+    <div style="background:rgba(4,245,255,0.1);border:1px solid rgba(4,245,255,0.3);border-radius:10px;padding:12px 14px;font-size:0.78rem;color:var(--cyan);margin-bottom:14px;line-height:1.5">
       💡 <strong>Preview mode</strong> — changes here don't affect your real team. To save a plan, click <strong>🗓 Plan Next GW</strong>.
     </div>
   ` : '';
@@ -1165,7 +1227,6 @@ function setViceFromAction(playerId) {
 function moveToBench(playerId) {
   if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   if (plannedTeam.bench.length === 0) return;
-  const firstSub = plannedTeam.bench[0];
   const p = state.players.find(x => x.id === playerId);
   let swapIdx = 0;
   if (p.pos === 'GK') {
@@ -1220,9 +1281,7 @@ function openSwapModal(playerId) {
   const content = document.getElementById('swap-modal-content');
 
   title.textContent = `Swap ${p.name}`;
-  sub.textContent = inStarters
-    ? 'Choose a bench player to swap in:'
-    : 'Choose a starter to swap out:';
+  sub.textContent = inStarters ? 'Choose a bench player to swap in:' : 'Choose a starter to swap out:';
 
   if (!candidates.length) {
     content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No players available to swap with.</div>';
@@ -1280,7 +1339,6 @@ function doSwap(targetId) {
   const p1 = actionPlayerId;
   const p2 = targetId;
   const p1InStarters = plannedTeam.starters.includes(p1);
-
   if (p1InStarters) {
     const i1 = plannedTeam.starters.indexOf(p1);
     const i2 = plannedTeam.bench.indexOf(p2);
@@ -1400,7 +1458,23 @@ function renderSeasonPlanner(retryCount = 0) {
   document.getElementById('pl-status-transfers').textContent = plannedTransfers;
 
   const current = state.currentGW;
-  let html = '';
+
+  if (openAccordions[current] === undefined) openAccordions[current] = true;
+
+  // Focus banner
+  let html = `
+    <div class="planner-focus-banner">
+      <div class="focus-left">
+        <span class="focus-label">🎯 YOU ARE HERE</span>
+        <span class="focus-gw">GW${current}</span>
+      </div>
+      <div class="focus-right">
+        <span class="focus-deadline" id="focus-deadline">—</span>
+        <button class="btn small" onclick="scrollToGW(${current})">↓ Jump to GW${current}</button>
+      </div>
+    </div>
+  `;
+
   for (let gw = 1; gw <= 38; gw++) {
     const status = getGWStatus(gw);
     const plan = state.plans.find(p => p.gw === gw);
@@ -1410,7 +1484,7 @@ function renderSeasonPlanner(retryCount = 0) {
     const result = gwResultCache[gw];
     const pastSummary = status === 'past' && result ? `<span class="gw-acc-pill captain">${result.points} pts</span>` : '';
     html += `
-      <div class="gw-accordion ${status} ${isOpen ? 'open' : ''}" data-gw="${gw}">
+      <div class="gw-accordion ${status} ${isOpen ? 'open' : ''}" data-gw="${gw}" id="gw-accordion-${gw}">
         <div class="gw-accordion-header" onclick="toggleAccordion(${gw})">
           <div class="gw-acc-gwnum">GW${gw}</div>
           <div class="gw-acc-summary">
@@ -1428,6 +1502,10 @@ function renderSeasonPlanner(retryCount = 0) {
       </div>`;
   }
   el.innerHTML = html;
+
+  // Auto-scroll to current GW
+  setTimeout(() => scrollToGW(current, false), 300);
+
   if (state.familyData) {
     for (let gw = 1; gw < current; gw++) {
       if (!gwResultCache[gw]) {
@@ -1436,6 +1514,16 @@ function renderSeasonPlanner(retryCount = 0) {
     }
   }
 }
+
+function scrollToGW(gw, smooth = true) {
+  const el = document.getElementById('gw-accordion-' + gw);
+  if (!el) return;
+  el.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
+  el.style.transition = 'box-shadow 0.4s';
+  el.style.boxShadow = '0 0 30px rgba(4,245,255,0.6)';
+  setTimeout(() => { el.style.boxShadow = ''; }, 1500);
+}
+
 async function updateGWPastSummary(gw, result) {
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"] .gw-accordion-header`);
   if (!el) return;
@@ -1452,6 +1540,7 @@ async function updateGWPastSummary(gw, result) {
     if (bodyEl) bodyEl.innerHTML = renderGWAccordionBody(gw, state.plans.find(p => p.gw === gw), 'past');
   }
 }
+
 function renderGWAccordionBody(gw, plan, status) {
   const isPast = status === 'past';
   const result = gwResultCache[gw];
@@ -1498,6 +1587,7 @@ function renderGWAccordionBody(gw, plan, status) {
   </div>`;
   return planHtml + fixturesHtml + actionsHtml;
 }
+
 function renderPastGWBody(gw, plan, result) {
   const pred = plan ? `<div class="gw-compare-col predicted">
     <h5>📋 You Planned</h5>
@@ -1520,6 +1610,7 @@ function renderPastGWBody(gw, plan, result) {
   </div>` : `<div class="gw-compare-col actual"><h5>✅ Actual Result</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">Loading...</div></div>`;
   return `<div class="gw-compare">${pred}${actual}</div>`;
 }
+
 function toggleAccordion(gw) {
   openAccordions[gw] = !openAccordions[gw];
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"]`);
@@ -1558,7 +1649,7 @@ function renderMiniLeaderboard() {
     <div class="lb-row mini ${r.id === teamId ? 'me' : ''}" onclick="switchView('leaderboard', document.querySelector('[data-view=leaderboard]'))">
       <div class="lb-rank">${RANK_EMOJI[i] || (i + 1)}</div>
       <div><div class="lb-name">${r.emoji} ${escapeHtml(r.name)} ${r.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div><div class="lb-teamname">${escapeHtml(r.teamName)}</div></div>
-      <div class="lb-stat">${r.totalPts}<small>Total</small></div>
+      <div class="lb-stat lb-primary">${r.totalPts}<small>Total</small></div>
       <div class="lb-stat">${r.gwPts}<small>GW</small></div>
     </div>`).join('');
 }
@@ -1573,6 +1664,7 @@ function renderLeaderboard() {
   renderGlance();
   renderCaptainPicks().catch(e => console.warn('Captain picks failed', e));
 }
+
 function renderWeeklyRoast() {
   const el = document.getElementById('weekly-roast');
   if (!el) return;
@@ -1581,8 +1673,37 @@ function renderWeeklyRoast() {
     return;
   }
   const lines = buildRoastLines();
-  el.innerHTML = `<div class="roast-title">🔥 WEEKLY ROAST — GW${state.currentGW || '?'}</div>${lines.map(l => `<div class="roast-line">${l}</div>`).join('')}`;
+  const currentGW = state.currentGW || '?';
+  const plainText = '🔥 WEEKLY ROAST — GW' + currentGW + '\n\n' +
+    lines.map(l => l.replace(/<[^>]*>/g, '')).join('\n') +
+    '\n\n— Sent from FPL Command Center';
+
+  el.innerHTML = `
+    <div class="roast-header-row">
+      <div class="roast-title">🔥 WEEKLY ROAST — GW${currentGW}</div>
+      <button class="btn small roast-copy-btn" onclick="copyRoastText(${JSON.stringify(plainText).replace(/"/g, '&quot;')})">📋 Copy for WhatsApp</button>
+    </div>
+    ${lines.map(l => `<div class="roast-line">${l}</div>`).join('')}
+  `;
 }
+
+function copyRoastText(text) {
+  navigator.clipboard.writeText(text).then(
+    () => toast('✅ Roast copied — paste it in WhatsApp!'),
+    () => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); toast('✅ Roast copied!'); }
+      catch (e) { toast('Copy failed — screenshot instead', true); }
+      document.body.removeChild(ta);
+    }
+  );
+}
+
 function buildRoastLines() {
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
@@ -1605,6 +1726,7 @@ function buildRoastLines() {
     `_ ${randomQuote(ROAST_WEEKLY)} _`,
   ].filter(Boolean);
 }
+
 function renderMainLeaderboard() {
   const card = document.getElementById('leaderboard-card');
   if (!card) return;
@@ -1619,7 +1741,7 @@ function renderMainLeaderboard() {
     return `<div class="lb-row ${r.id === teamId ? 'me' : ''}">
       <div class="lb-rank">${RANK_EMOJI[i] || (i + 1)}</div>
       <div><div class="lb-name">${r.emoji || ''} ${escapeHtml(r.name)} ${r.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''} ${MOOD_EMOJI[mood] || ''}</div><div class="lb-teamname">${escapeHtml(r.entry?.name || '')}</div></div>
-      <div class="lb-stat">${r.totalPts}<small>Total</small></div>
+      <div class="lb-stat lb-primary">${r.totalPts}<small>Total</small></div>
       <div class="lb-stat">${r.gwPts}<small>GW</small></div>
       <div class="lb-stat">${fmtRank(r.overallRank)}<small>Rank</small></div>
     </div>`;
@@ -1656,7 +1778,7 @@ function renderBestGW() {
     return `<div class="lb-row ${e.id === teamId ? 'me' : ''}">
       <div class="lb-rank">${medal}</div>
       <div><div class="lb-name">${e.emoji || ''} ${escapeHtml(e.name)} ${e.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div><div class="lb-teamname">${escapeHtml(e.teamName)}</div>${quote ? `<div class="lb-quote">"${quote}"</div>` : ''}</div>
-      <div class="lb-stat">${e.points} pts<small>Best</small></div>
+      <div class="lb-stat lb-primary">${e.points} pts<small>Best</small></div>
       <div class="lb-stat">GW${e.gw}<small>When</small></div>
       <div class="lb-stat" style="font-size:0.72rem">${chipLabel}<small>Chip</small></div>
     </div>`;
@@ -1680,7 +1802,7 @@ function renderWorstGW() {
     return `<div class="lb-row ${e.id === teamId ? 'me' : ''}">
       <div class="lb-rank">${medal}</div>
       <div><div class="lb-name">${e.emoji || ''} ${escapeHtml(e.name)} ${e.id === teamId ? '<span style="color:var(--mint);font-size:0.7rem">(YOU)</span>' : ''}</div><div class="lb-teamname">${escapeHtml(e.teamName)}</div><div class="lb-quote">"${quote}"</div></div>
-      <div class="lb-stat">${e.points} pts<small>Worst</small></div>
+      <div class="lb-stat lb-primary">${e.points} pts<small>Worst</small></div>
       <div class="lb-stat">GW${e.gw}<small>When</small></div>
       <div class="lb-stat">${shame}<small>Shame</small></div>
     </div>`;
@@ -1774,6 +1896,7 @@ async function renderCaptainPicks() {
   worstEl.innerHTML = worstList.map(r => renderRow(r, r.worst, 'worst')).join('');
   bestEl.innerHTML = bestList.map(r => renderRow(r, r.best, 'best')).join('');
 }
+
 function renderGlance() {
   const el = document.getElementById('weekly-glance');
   if (!el) return;
@@ -1788,11 +1911,44 @@ function renderGlance() {
   const worst = [...rows].sort((a, b) => a.gwPts - b.gwPts)[0];
   const avg = Math.round(rows.reduce((s, r) => s + r.gwPts, 0) / rows.length);
   const leader = [...rows].sort((a, b) => b.totalPts - a.totalPts)[0];
-  el.innerHTML = `<div class="glance-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">
-    <div class="glance-card"><div class="label">🏆 Leader</div><div class="value">${leader.totalPts}</div><div class="sub">${leader.emoji} ${escapeHtml(leader.name.split(' ')[0])}</div></div>
-    <div class="glance-card"><div class="label">⚡ Best GW</div><div class="value">${best.gwPts}</div><div class="sub">${best.emoji} ${escapeHtml(best.name.split(' ')[0])}</div></div>
-    <div class="glance-card"><div class="label">📊 Family Avg</div><div class="value">${avg}</div><div class="sub">this GW</div></div>
-    <div class="glance-card"><div class="label">😅 Worst GW</div><div class="value">${worst.gwPts}</div><div class="sub">${worst.emoji} ${escapeHtml(worst.name.split(' ')[0])}</div></div>
+  const gap = leader.totalPts - ([...rows].sort((a, b) => b.totalPts - a.totalPts)[1]?.totalPts || 0);
+
+  const leaderQuote = gap < 10 ? `"${gap} pts separate top from 2nd. Tense."` :
+                      gap > 50 ? `"Running away with it. Boring."` :
+                      `"Still on top. Tick tock."`;
+  const bestQuote = best.gwPts >= 70 ? `"${best.gwPts} pts! Someone bring the stretcher."` :
+                    best.gwPts >= 50 ? `"${best.gwPts} pts. Top of the week."` :
+                    `"Top score this week. Just."`;
+  const avgQuote = `"The average of chaos."`;
+  const worstQuote = worst.gwPts <= 40 ? `"${worst.gwPts} pts. Send help."` :
+                     worst.gwPts <= 55 ? `"${worst.gwPts} pts. Not the worst ever."` :
+                     `"${worst.gwPts} pts. Just vibing."`;
+
+  el.innerHTML = `<div class="glance-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
+    <div class="glance-card">
+      <div class="label">🏆 Leader</div>
+      <div class="value">${leader.totalPts}</div>
+      <div class="sub">${leader.emoji} ${escapeHtml(leader.name.split(' ')[0])}</div>
+      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${leaderQuote}</div>
+    </div>
+    <div class="glance-card">
+      <div class="label">⚡ Best GW</div>
+      <div class="value">${best.gwPts}</div>
+      <div class="sub">${best.emoji} ${escapeHtml(best.name.split(' ')[0])}</div>
+      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${bestQuote}</div>
+    </div>
+    <div class="glance-card">
+      <div class="label">📊 Family Avg</div>
+      <div class="value">${avg}</div>
+      <div class="sub">this GW</div>
+      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${avgQuote}</div>
+    </div>
+    <div class="glance-card">
+      <div class="label">😅 Worst GW</div>
+      <div class="value">${worst.gwPts}</div>
+      <div class="sub">${worst.emoji} ${escapeHtml(worst.name.split(' ')[0])}</div>
+      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${worstQuote}</div>
+    </div>
   </div>`;
 }
 
@@ -1883,7 +2039,7 @@ function renderPlayers() {
     const badge = `${BADGE_BASE}/${p.teamId}.svg`;
     return `<div class="player-result">
       <div class="name"><span>${statusWarn}${escapeHtml(p.name)}</span><span class="pos-badge" data-pos="${p.pos}">${p.pos}</span></div>
-      <div class="meta"><span class="price-tag">${fmt(p.price)}</span><span style="display:flex;align-items:center;gap:4px"><img src="${badge}" style="width:12px;height:12px" onerror="this.style.display='none'">${escapeHtml(p.team)}</span></div>
+      <div class="meta"><span class="price-tag">${fmt(p.price)}</span><span style="display:flex;align-items:center;gap:4px"><img src="${badge}" style="width:14px;height:14px" onerror="this.style.display='none'">${escapeHtml(p.team)}</span></div>
       <div class="stat-line"><span>Points</span><strong>${p.points}</strong></div>
       <div class="stat-line"><span>Form</span><strong>${p.form.toFixed(1)}</strong></div>
       <div class="stat-line"><span>Owned</span><strong>${p.ownership.toFixed(1)}%</strong></div>
@@ -2429,3 +2585,5 @@ window.moveToStarters = moveToStarters;
 window.openSwapModal = openSwapModal;
 window.doSwap = doSwap;
 window.transferOutFromAction = transferOutFromAction;
+window.scrollToGW = scrollToGW;
+window.copyRoastText = copyRoastText;
