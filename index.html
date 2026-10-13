@@ -11,7 +11,7 @@
 <title>⚡ FPL Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
@@ -78,6 +78,7 @@
     <button class="main-tab" data-view="planner" onclick="switchView('planner', this)"><span class="tab-emoji">🗓</span> <span class="tab-text">Planner</span></button>
     <button class="main-tab" data-view="leaderboard" onclick="switchView('leaderboard', this)"><span class="tab-emoji">🏆</span> <span class="tab-text">League</span></button>
     <button class="main-tab" data-view="history" onclick="switchView('history', this)"><span class="tab-emoji">📈</span> <span class="tab-text">History</span></button>
+    <button class="main-tab" data-view="news" onclick="switchView('news', this)"><span class="tab-emoji">📰</span> <span class="tab-text">News</span></button>
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
@@ -293,6 +294,31 @@
     </section>
   </div>
 
+  <!-- NEWS -->
+  <div id="view-news" class="view" style="display:none">
+    <section>
+      <div class="section-title">
+        📰 FPL & Football News
+        <span class="hint-inline">
+          <button class="view-toggle" onclick="refreshNews()" id="news-refresh-btn">🔄 Refresh</button>
+        </span>
+      </div>
+
+      <div class="news-filters" id="news-filters">
+        <button class="news-filter active" data-filter="all" onclick="filterNews('all', this)">🌍 All</button>
+        <button class="news-filter" data-filter="en" onclick="filterNews('en', this)">🇬🇧 English</button>
+        <button class="news-filter" data-filter="ar" onclick="filterNews('ar', this)">🇸🇦 العربية</button>
+        <button class="news-filter" data-filter="nl" onclick="filterNews('nl', this)">🇳🇱 Nederlands</button>
+      </div>
+
+      <div class="news-updated" id="news-updated"></div>
+
+      <div class="news-grid" id="news-grid">
+        <div class="empty"><span class="emoji">📰</span>Click <strong>🔄 Refresh</strong> to load the latest FPL news</div>
+      </div>
+    </section>
+  </div>
+
   <!-- PLAYERS -->
   <div id="view-players" class="view" style="display:none">
     <section>
@@ -320,7 +346,7 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v10 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v11 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
@@ -468,10 +494,10 @@
     <div class="modal-handle"></div>
     <h3>❓ How it works</h3>
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
-      <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh data when you return to the tab (if >30 min old).</p>
+      <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh FPL data when you return to the tab (if >30 min old).</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">2. My Team tab</strong> — Pitch/List view with player faces.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Plan Next GW</strong> — tap the "🗓 Plan Next GW" button to enter planning mode. Tap any player to swap, set captain, or transfer out.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">4. Autocomplete everywhere</strong> — start typing any player name.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Plan Next GW</strong> — enter planning mode to swap players, set captain, transfer out.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">4. News tab</strong> — live tweets from top FPL accounts in English, Arabic & Dutch.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">5. Player details</strong> — click any player to see full performance breakdown.</p>
     </div>
     <div class="modal-actions">
@@ -492,6 +518,7 @@
       <div class="shortcut-row"><kbd>P</kbd><span>Planner tab</span></div>
       <div class="shortcut-row"><kbd>L</kbd><span>Family League tab</span></div>
       <div class="shortcut-row"><kbd>H</kbd><span>My History tab</span></div>
+      <div class="shortcut-row"><kbd>N</kbd><span>News tab (only when not typing)</span></div>
       <div class="shortcut-row"><kbd>V</kbd><span>Toggle Pitch / List view</span></div>
       <div class="shortcut-row"><kbd>Esc</kbd><span>Close any modal</span></div>
     </div>
