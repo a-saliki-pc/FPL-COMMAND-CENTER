@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v10 — app.js
-   GW auto-detect · Planner auto-advance · Mobile UX
+   FPL Command Center v11 — app.js
+   + News Tab (Nitter RSS)
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -40,6 +40,29 @@ const ROAST_BEST = ["Peaked early. Enjoy it while it lasts.", "Wildcard magic or
 const ROAST_WORST = ["Could have been worse. It wasn't much better.", "Even the bench outscored him this week.", "Sweating through a premium pick that blanked.", "Started the season in clown mode. Legendary.", "Died on the pitch. RIP his GW.", "Straight to the bin. Nothing saved.", "At least the app didn't crash. Silver linings.", "Someone check on him.", "The wooden spoon is calling.", "Trusted his gut. His gut was wrong. Again."];
 const ROAST_WEEKLY = ["Family group chat is going to be spicy this week.", "Somebody's getting roasted in the WhatsApp group.", "Rivalries intensifying. Popcorn ready.", "Nobody wants to be last. Yet here we are.", "Peak drama. Peak FPL. Peak family.", "Remember: it's just a game. (It's not.)", "Screenshots incoming. Defend yourselves."];
 
+/* ========== NEWS ACCOUNTS ========== */
+const NITTER_INSTANCES = [
+  'https://nitter.kareem.one',
+  'https://nitter.meowing.monster',
+  'https://xcancel.com',
+];
+
+const NEWS_ACCOUNTS = [
+  // 🇬🇧 English
+  { handle: 'OfficialFPL',     lang: 'en', flag: '🇬🇧', label: 'Fantasy Premier League' },
+  { handle: 'FFScout',         lang: 'en', flag: '🇬🇧', label: 'Fantasy Football Scout' },
+  { handle: 'FPLStatus',       lang: 'en', flag: '🇬🇧', label: 'FPL Status' },
+  { handle: 'FPLPriceChanges', lang: 'en', flag: '🇬🇧', label: 'FPL Price Changes' },
+  // 🇸🇦 Arabic
+  { handle: 'zaghal2001',      lang: 'ar', flag: '🇸🇦', label: 'Zaghal FPL' },
+  { handle: 'FPL_UCF',         lang: 'ar', flag: '🇸🇦', label: 'FPL UCF' },
+  { handle: 'FantasyplMania',  lang: 'ar', flag: '🇸🇦', label: 'FantasyPL Mania' },
+  { handle: 'alkufani',        lang: 'ar', flag: '🇸🇦', label: 'Ali Adam' },
+  // 🇳🇱 Dutch
+  { handle: 'OnsOranje',       lang: 'nl', flag: '🇳🇱', label: 'Ons Oranje' },
+  { handle: 'OpaToivonen',     lang: 'nl', flag: '🇳🇱', label: 'Opa Toivonen' },
+];
+
 /* ========== STATE ========== */
 let state = null;
 let teamId = null;
@@ -59,6 +82,10 @@ let plannedTeam = null;
 let actionPlayerId = null;
 let swapTargetId = null;
 let swapIsBench = false;
+
+// News state
+let newsCache = { tweets: [], lastFetch: 0, filter: 'all' };
+let newsLoading = false;
 
 function storageKey(id) { return `fpl-cc-v6:${id}`; }
 function emptyState() {
@@ -124,6 +151,18 @@ function timeAgo(ts) {
   const h = Math.floor(min / 60);
   if (h < 24) return h + 'h ago';
   return Math.floor(h / 24) + 'd ago';
+}
+function timeAgoShort(dateStr) {
+  if (!dateStr) return '';
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'now';
+  if (min < 60) return min + 'm';
+  const h = Math.floor(min / 60);
+  if (h < 24) return h + 'h';
+  const d = Math.floor(h / 24);
+  if (d < 7) return d + 'd';
+  return Math.floor(d / 7) + 'w';
 }
 
 /* ========== THEME ========== */
@@ -191,6 +230,12 @@ async function fpl(path) {
   const res = await fetch(url);
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.json();
+}
+async function proxyFetch(targetUrl) {
+  const url = PROXY + encodeURIComponent(targetUrl);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return res.text();
 }
 function playerImgUrl(el) {
   if (!el || !el.code) return '';
@@ -308,21 +353,15 @@ async function syncAll(showToast = true) {
     const boot = await fpl('/bootstrap-static/');
     state.bootstrap = { elements: boot.elements, teams: boot.teams, events: boot.events };
 
-    // Smart GW detection
     const liveGW = boot.events.find(e => e.is_current);
     const nextGW = boot.events.find(e => e.is_next);
     const finishedGWs = boot.events.filter(e => e.finished);
 
     let currentGW;
-    if (liveGW) {
-      currentGW = liveGW.id;
-    } else if (finishedGWs.length > 0) {
-      currentGW = Math.max(...finishedGWs.map(e => e.id));
-    } else if (nextGW) {
-      currentGW = Math.max(1, nextGW.id - 1);
-    } else {
-      currentGW = 1;
-    }
+    if (liveGW) currentGW = liveGW.id;
+    else if (finishedGWs.length > 0) currentGW = Math.max(...finishedGWs.map(e => e.id));
+    else if (nextGW) currentGW = Math.max(1, nextGW.id - 1);
+    else currentGW = 1;
     state.currentGW = currentGW;
     state.nextGW = nextGW?.id || null;
     state.nextDeadline = nextGW?.deadline_time || null;
@@ -499,6 +538,7 @@ function switchView(name, el) {
   if (name === 'history') renderHistory();
   if (name === 'players') renderPlayers();
   if (name === 'team') renderTeamView();
+  if (name === 'news') renderNews();
   if (name === 'planner') {
     if (!state?.currentGW && state?.lastSync === 0) {
       const el2 = document.getElementById('season-planner');
@@ -543,6 +583,191 @@ function startCountdown() {
   }
   tick();
   setInterval(tick, 1000);
+}
+
+/* =========================================================
+   NEWS — Nitter RSS fetching
+   ========================================================= */
+async function fetchTweet(account) {
+  // Try each Nitter instance in order
+  for (const instance of NITTER_INSTANCES) {
+    try {
+      const url = `${instance}/${account.handle}/rss`;
+      const xml = await proxyFetch(url);
+      if (!xml || !xml.includes('<item>')) continue;
+      const parsed = parseRSS(xml, account);
+      if (parsed.length) return parsed;
+    } catch (e) {
+      console.warn(`Nitter ${instance} failed for @${account.handle}:`, e.message);
+    }
+  }
+  return [];
+}
+
+function parseRSS(xmlText, account) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlText, 'application/xml');
+  const items = doc.querySelectorAll('item');
+  const tweets = [];
+  items.forEach((item, i) => {
+    if (i >= 3) return; // 3 tweets per account max
+    const title = item.querySelector('title')?.textContent || '';
+    const link = item.querySelector('link')?.textContent || '';
+    const creator = item.querySelector('dc\\:creator, creator')?.textContent || `@${account.handle}`;
+    const pubDate = item.querySelector('pubDate')?.textContent || '';
+    const description = item.querySelector('description')?.textContent || '';
+
+    // Clean up the text: remove HTML, decode entities
+    let text = title.trim();
+    if (!text && description) {
+      // Fallback: strip HTML from description
+      const tmp = document.createElement('div');
+      tmp.innerHTML = description;
+      text = tmp.textContent || '';
+    }
+    // Decode &apos; &amp; etc
+    text = text.replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+    if (!text || text.length < 5) return;
+
+    tweets.push({
+      id: `t-${account.handle}-${i}-${Date.now()}`,
+      author: `@${account.handle}`,
+      authorName: account.label,
+      text: text,
+      url: link || `https://twitter.com/${account.handle}`,
+      time: pubDate,
+      lang: account.lang,
+      flag: account.flag,
+      category: categorizeTweet(text),
+    });
+  });
+  return tweets;
+}
+
+function categorizeTweet(text) {
+  const t = text.toLowerCase();
+  // Injuries
+  if (/\b(injur|doubt|out for|ruled out|fitness|hamstring|knee|ankle|suspended|red card|illness)\b/.test(t)) return 'injury';
+  // Prices
+  if (/\b(price|rise|fall|cost|£|cheap|expensive|bargain|value|transfers in|transfers out)\b/.test(t)) return 'price';
+  // Fixtures
+  if (/\b(fixture|gw|gameweek|double|blank|dgw|bgw|deadline|kickoff|ko)\b/.test(t)) return 'fixture';
+  return 'general';
+}
+
+async function refreshNews(showToastMsg = true) {
+  if (newsLoading) return;
+  newsLoading = true;
+  const grid = document.getElementById('news-grid');
+  const refreshBtn = document.getElementById('news-refresh-btn');
+  if (refreshBtn) { refreshBtn.disabled = true; refreshBtn.textContent = '⏳ Loading...'; }
+  if (grid) {
+    grid.innerHTML = `
+      <div class="news-loading" style="grid-column:1/-1">
+        <span class="spinner-dot"></span>
+        <span class="spinner-dot"></span>
+        <span class="spinner-dot"></span>
+        <div style="margin-top:14px">Loading live tweets from FPL accounts...</div>
+      </div>
+    `;
+  }
+
+  const allTweets = [];
+  try {
+    // Fetch all accounts in parallel, but limit concurrency to 3 at a time to avoid rate limits
+    const chunks = [];
+    for (let i = 0; i < NEWS_ACCOUNTS.length; i += 3) {
+      chunks.push(NEWS_ACCOUNTS.slice(i, i + 3));
+    }
+    for (const chunk of chunks) {
+      const results = await Promise.all(chunk.map(acc => fetchTweet(acc).catch(() => [])));
+      results.forEach(r => allTweets.push(...r));
+    }
+  } catch (e) {
+    console.error('News fetch error', e);
+  }
+
+  // Sort by date, newest first
+  allTweets.sort((a, b) => {
+    const aT = a.time ? new Date(a.time).getTime() : 0;
+    const bT = b.time ? new Date(b.time).getTime() : 0;
+    return bT - aT;
+  });
+
+  newsCache = { tweets: allTweets, lastFetch: Date.now(), filter: newsCache.filter };
+  newsLoading = false;
+  if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '🔄 Refresh'; }
+
+  renderNews(showToastMsg);
+}
+
+function renderNews(showMessage = false) {
+  const grid = document.getElementById('news-grid');
+  const updated = document.getElementById('news-updated');
+  if (!grid) return;
+
+  // Auto-fetch if cache is empty or >15 min old
+  const age = Date.now() - (newsCache.lastFetch || 0);
+  if (!newsCache.tweets.length || age > 15 * 60 * 1000) {
+    if (!newsLoading) refreshNews(false);
+    return;
+  }
+
+  if (updated) {
+    updated.textContent = `Updated ${timeAgo(newsCache.lastFetch)} · ${newsCache.tweets.length} tweets`;
+  }
+
+  let tweets = newsCache.tweets;
+  if (newsCache.filter !== 'all') {
+    tweets = tweets.filter(t => t.lang === newsCache.filter);
+  }
+
+  if (!tweets.length) {
+    grid.innerHTML = `
+      <div class="news-loading" style="grid-column:1/-1">
+        <div style="font-size:2.5rem;margin-bottom:12px">😴</div>
+        <div>No tweets available right now.</div>
+        <div style="margin-top:8px;font-size:0.8rem">Nitter instances might be down. Try again in a few minutes.</div>
+      </div>
+    `;
+    return;
+  }
+
+  grid.innerHTML = tweets.map(t => {
+    const rtlAttr = t.lang === 'ar' ? 'dir="rtl"' : '';
+    const categoryLabel = {
+      injury: '🚨 Injury',
+      price: '💰 Price',
+      fixture: '📅 Fixture',
+      general: '⚡ FPL',
+    }[t.category];
+
+    return `
+      <div class="news-card" data-lang="${t.lang}" onclick="window.open('${t.url}', '_blank')">
+        <div class="news-card-header">
+          <div class="news-avatar" style="display:flex;align-items:center;justify-content:center;font-size:1.4rem">${t.flag}</div>
+          <div class="news-author-info">
+            <div class="news-author-name">${escapeHtml(t.authorName)}</div>
+            <div class="news-author-handle">${escapeHtml(t.author)}</div>
+          </div>
+          <div class="news-time">${timeAgoShort(t.time)}</div>
+        </div>
+        <div class="news-content" ${rtlAttr}>${escapeHtml(t.text)}</div>
+        <div class="news-footer">
+          <span class="news-category ${t.category}">${categoryLabel}</span>
+          <span class="news-open-link">Open on X →</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function filterNews(filter, btn) {
+  newsCache.filter = filter;
+  document.querySelectorAll('.news-filter').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderNews();
 }
 
 /* ========== RENDER ALL ========== */
@@ -603,7 +828,6 @@ function renderGWGlanceBanner() {
   const worst = withLive[withLive.length - 1];
   const capPts = state.players.find(p => p.captain);
 
-  // Dynamic roast quotes
   const teamPts = latest.points || 0;
   const teamQuote = teamPts > 60 ? `"${teamPts} pts. That's a haul!"` :
                     teamPts > 45 ? `"${teamPts} pts. Solid week."` :
@@ -822,7 +1046,6 @@ function renderPitchView(container, planning) {
   }
 
   let starters, bench;
-
   if (planning && plannedTeam) {
     starters = plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean);
     bench = plannedTeam.bench.map(id => state.players.find(p => p.id === id)).filter(Boolean);
@@ -974,14 +1197,11 @@ function renderTeamView() {
 function renderPlanCompare(gw, plan) {
   const el = document.getElementById('plan-compare-content');
   if (!el) return;
-
   const currentStarters = state.players.filter(p => !p.bench).map(p => p.id);
   const currentBench = state.players.filter(p => p.bench).map(p => p.id);
   const currentCap = state.players.find(p => p.captain)?.id;
   const currentVC = state.players.find(p => p.vice)?.id;
-
   const changes = [];
-
   if (plan.captain !== currentCap) {
     const from = state.players.find(p => p.id === currentCap);
     const to = state.players.find(p => p.id === plan.captain);
@@ -992,10 +1212,8 @@ function renderPlanCompare(gw, plan) {
     const to = state.players.find(p => p.id === plan.vice);
     if (to) changes.push({ label: 'Vice', from: from ? from.name : 'None', to: to.name });
   }
-
   const movedToBench = currentStarters.filter(id => !plan.starters.includes(id));
   const movedToStart = currentBench.filter(id => plan.starters.includes(id));
-
   movedToBench.forEach(id => {
     const p = state.players.find(x => x.id === id);
     if (p) changes.push({ label: '⬇ Bench', from: p.name, to: 'Bench' });
@@ -1004,17 +1222,10 @@ function renderPlanCompare(gw, plan) {
     const p = state.players.find(x => x.id === id);
     if (p) changes.push({ label: '⬆ Start', from: 'Bench', to: p.name });
   });
-
-  const benchChanged = currentBench.some((id, i) => plan.bench[i] !== id);
-  if (benchChanged && !movedToBench.length && !movedToStart.length) {
-    changes.push({ label: 'Bench order', from: 'Changed', to: 'Reordered' });
-  }
-
   if (!changes.length) {
     el.innerHTML = '<div class="plan-compare-empty">No changes — your plan matches your current team for GW' + gw + '.</div>';
     return;
   }
-
   el.innerHTML = `
     <div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">
       Saved plan for GW${gw} — ${changes.length} change${changes.length !== 1 ? 's' : ''}
@@ -1037,11 +1248,9 @@ function renderPlanCompare(gw, plan) {
 /* ========== PLANNING MODE ========== */
 function enterPlanningMode() {
   if (!state.players.length) return toast('Sync first', true);
-
   const nextGW = state.nextGW || state.currentGW + 1;
   planningMode = true;
   planningGW = nextGW;
-
   const saved = state.plannedTeams?.[nextGW];
   if (saved) {
     plannedTeam = { ...saved };
@@ -1053,7 +1262,6 @@ function enterPlanningMode() {
       vice: state.players.find(p => p.vice)?.id || null,
     };
   }
-
   renderTeamView();
   toast(`🗓 Planning mode — GW${nextGW}`);
 }
@@ -1115,7 +1323,6 @@ function openActionModal(playerId) {
   actionPlayerId = playerId;
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
-
   const inPlanning = planningMode && plannedTeam;
   const activeTeam = inPlanning ? plannedTeam : {
     starters: state.players.filter(x => !x.bench).map(x => x.id),
@@ -1123,24 +1330,19 @@ function openActionModal(playerId) {
     captain: state.players.find(x => x.captain)?.id || null,
     vice: state.players.find(x => x.vice)?.id || null,
   };
-
   const inStarters = activeTeam.starters.includes(p.id);
   const isCap = activeTeam.captain === p.id;
   const isVC = activeTeam.vice === p.id;
-
   const title = document.getElementById('action-modal-title');
   const content = document.getElementById('action-modal-content');
   title.textContent = `Actions — ${p.name}`;
-
   const live = liveDataCache[state.currentGW]?.[p.fplId];
   const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
-
   const previewBanner = !inPlanning ? `
     <div style="background:rgba(4,245,255,0.1);border:1px solid rgba(4,245,255,0.3);border-radius:10px;padding:12px 14px;font-size:0.78rem;color:var(--cyan);margin-bottom:14px;line-height:1.5">
       💡 <strong>Preview mode</strong> — changes here don't affect your real team. To save a plan, click <strong>🗓 Plan Next GW</strong>.
     </div>
   ` : '';
-
   content.innerHTML = `
     ${previewBanner}
     <div class="action-player-info">
@@ -1151,57 +1353,19 @@ function openActionModal(playerId) {
       </div>
     </div>
     <div class="action-list">
-      ${!isCap ? `
-        <button class="action-btn primary-action" onclick="setCaptainFromAction('${p.id}')">
-          <span class="action-icon">👑</span>
-          <span class="action-info">Make Captain<span class="action-sub">Gets 2× points this GW</span></span>
-        </button>
-      ` : `
-        <button class="action-btn primary-action" onclick="setCaptainFromAction(null)">
-          <span class="action-icon">👑</span>
-          <span class="action-info">Remove Captain<span class="action-sub">Currently ©️</span></span>
-        </button>
-      `}
-      ${!isVC && !isCap ? `
-        <button class="action-btn" onclick="setViceFromAction('${p.id}')">
-          <span class="action-icon">🎗️</span>
-          <span class="action-info">Make Vice-Captain<span class="action-sub">Backup if captain blanks</span></span>
-        </button>
-      ` : ''}
-      ${inStarters ? `
-        <button class="action-btn" onclick="moveToBench('${p.id}')">
-          <span class="action-icon">⬇️</span>
-          <span class="action-info">Move to Bench<span class="action-sub">Sends to bench, auto-swap</span></span>
-        </button>
-      ` : `
-        <button class="action-btn" onclick="moveToStarters('${p.id}')">
-          <span class="action-icon">⬆️</span>
-          <span class="action-info">Move to Starting XI<span class="action-sub">Swap with a starter</span></span>
-        </button>
-      `}
-      <button class="action-btn" onclick="openSwapModal('${p.id}')">
-        <span class="action-icon">🔄</span>
-        <span class="action-info">Swap with...<span class="action-sub">Pick a specific player</span></span>
-      </button>
-      <button class="action-btn" onclick="openPerfModal('${p.id}');closeModal('action-modal')">
-        <span class="action-icon">📊</span>
-        <span class="action-info">View Performance<span class="action-sub">Full stats breakdown</span></span>
-      </button>
-      <button class="action-btn danger-action" onclick="transferOutFromAction('${p.id}')">
-        <span class="action-icon">💸</span>
-        <span class="action-info">Transfer Out<span class="action-sub">Plan a transfer</span></span>
-      </button>
+      ${!isCap ? `<button class="action-btn primary-action" onclick="setCaptainFromAction('${p.id}')"><span class="action-icon">👑</span><span class="action-info">Make Captain<span class="action-sub">Gets 2× points this GW</span></span></button>` : `<button class="action-btn primary-action" onclick="setCaptainFromAction(null)"><span class="action-icon">👑</span><span class="action-info">Remove Captain<span class="action-sub">Currently ©️</span></span></button>`}
+      ${!isVC && !isCap ? `<button class="action-btn" onclick="setViceFromAction('${p.id}')"><span class="action-icon">🎗️</span><span class="action-info">Make Vice-Captain<span class="action-sub">Backup if captain blanks</span></span></button>` : ''}
+      ${inStarters ? `<button class="action-btn" onclick="moveToBench('${p.id}')"><span class="action-icon">⬇️</span><span class="action-info">Move to Bench<span class="action-sub">Sends to bench, auto-swap</span></span></button>` : `<button class="action-btn" onclick="moveToStarters('${p.id}')"><span class="action-icon">⬆️</span><span class="action-info">Move to Starting XI<span class="action-sub">Swap with a starter</span></span></button>`}
+      <button class="action-btn" onclick="openSwapModal('${p.id}')"><span class="action-icon">🔄</span><span class="action-info">Swap with...<span class="action-sub">Pick a specific player</span></span></button>
+      <button class="action-btn" onclick="openPerfModal('${p.id}');closeModal('action-modal')"><span class="action-icon">📊</span><span class="action-info">View Performance<span class="action-sub">Full stats breakdown</span></span></button>
+      <button class="action-btn danger-action" onclick="transferOutFromAction('${p.id}')"><span class="action-icon">💸</span><span class="action-info">Transfer Out<span class="action-sub">Plan a transfer</span></span></button>
     </div>
   `;
   document.getElementById('action-modal').classList.add('active');
 }
 
 function setCaptainFromAction(playerId) {
-  if (!planningMode) {
-    toast('Enable Planning Mode to make changes', true);
-    closeModal('action-modal');
-    return;
-  }
+  if (!planningMode) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   if (!plannedTeam) return;
   plannedTeam.captain = playerId;
   if (playerId && plannedTeam.vice === playerId) plannedTeam.vice = null;
@@ -1209,13 +1373,8 @@ function setCaptainFromAction(playerId) {
   renderTeamView();
   toast(playerId ? '👑 Captain set' : '👑 Captain removed');
 }
-
 function setViceFromAction(playerId) {
-  if (!planningMode) {
-    toast('Enable Planning Mode to make changes', true);
-    closeModal('action-modal');
-    return;
-  }
+  if (!planningMode) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   if (!plannedTeam) return;
   plannedTeam.vice = playerId;
   if (playerId && plannedTeam.captain === playerId) plannedTeam.captain = null;
@@ -1223,7 +1382,6 @@ function setViceFromAction(playerId) {
   renderTeamView();
   toast('🎗️ Vice set');
 }
-
 function moveToBench(playerId) {
   if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   if (plannedTeam.bench.length === 0) return;
@@ -1243,7 +1401,6 @@ function moveToBench(playerId) {
   renderTeamView();
   toast('⬇️ Moved to bench');
 }
-
 function moveToStarters(playerId) {
   if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   const p = state.players.find(x => x.id === playerId);
@@ -1262,49 +1419,32 @@ function moveToStarters(playerId) {
   renderTeamView();
   toast('⬆️ Moved to starting XI');
 }
-
 function openSwapModal(playerId) {
   if (!planningMode || !plannedTeam) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   actionPlayerId = playerId;
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
-
   const inStarters = plannedTeam.starters.includes(p.id);
   const candidates = inStarters
     ? plannedTeam.bench.map(id => state.players.find(x => x.id === id)).filter(Boolean)
     : plannedTeam.starters.map(id => state.players.find(x => x.id === id)).filter(Boolean);
-
   swapTargetId = null;
-
   const title = document.getElementById('swap-modal-title');
   const sub = document.getElementById('swap-modal-sub');
   const content = document.getElementById('swap-modal-content');
-
   title.textContent = `Swap ${p.name}`;
   sub.textContent = inStarters ? 'Choose a bench player to swap in:' : 'Choose a starter to swap out:';
-
   if (!candidates.length) {
     content.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">No players available to swap with.</div>';
     document.getElementById('swap-modal').classList.add('active');
     return;
   }
-
   content.innerHTML = `<div class="swap-grid">${candidates.map(c => {
     const isValid = canSwap(p, c, inStarters);
-    return `
-      <button class="swap-option ${isValid ? '' : 'disabled'}" ${isValid ? `onclick="doSwap('${c.id}')"` : 'disabled'}>
-        ${c.photo ? `<img src="${c.photo}" alt="" onerror="this.style.display='none'">` : ''}
-        <div>
-          <div class="swap-name">${escapeHtml(c.name.split(' ').slice(-1)[0])}</div>
-          <div class="swap-meta">${c.pos} · ${fmt(c.price)}</div>
-        </div>
-      </button>
-    `;
+    return `<button class="swap-option ${isValid ? '' : 'disabled'}" ${isValid ? `onclick="doSwap('${c.id}')"` : 'disabled'}>${c.photo ? `<img src="${c.photo}" alt="" onerror="this.style.display='none'">` : ''}<div><div class="swap-name">${escapeHtml(c.name.split(' ').slice(-1)[0])}</div><div class="swap-meta">${c.pos} · ${fmt(c.price)}</div></div></button>`;
   }).join('')}</div>`;
-
   document.getElementById('swap-modal').classList.add('active');
 }
-
 function canSwap(p1, p2, p1InStarters) {
   if (p1.pos === p2.pos) return true;
   const tempStarters = [...plannedTeam.starters];
@@ -1333,7 +1473,6 @@ function canSwap(p1, p2, p1InStarters) {
   if (fwd < 1 || fwd > 3) return false;
   return true;
 }
-
 function doSwap(targetId) {
   if (!plannedTeam || !actionPlayerId || !targetId) return;
   const p1 = actionPlayerId;
@@ -1359,7 +1498,6 @@ function doSwap(targetId) {
   renderTeamView();
   toast('🔄 Swapped');
 }
-
 function transferOutFromAction(playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
@@ -1458,10 +1596,8 @@ function renderSeasonPlanner(retryCount = 0) {
   document.getElementById('pl-status-transfers').textContent = plannedTransfers;
 
   const current = state.currentGW;
-
   if (openAccordions[current] === undefined) openAccordions[current] = true;
 
-  // Focus banner
   let html = `
     <div class="planner-focus-banner">
       <div class="focus-left">
@@ -1502,10 +1638,7 @@ function renderSeasonPlanner(retryCount = 0) {
       </div>`;
   }
   el.innerHTML = html;
-
-  // Auto-scroll to current GW
   setTimeout(() => scrollToGW(current, false), 300);
-
   if (state.familyData) {
     for (let gw = 1; gw < current; gw++) {
       if (!gwResultCache[gw]) {
@@ -1596,7 +1729,6 @@ function renderPastGWBody(gw, plan, result) {
     ${plan.vice ? `<div class="gw-compare-line"><span class="label">Vice</span><span class="value">🎗️ ${escapeHtml(plan.vice)}</span></div>` : ''}
     ${plan.chip ? `<div class="gw-compare-line"><span class="label">Chip</span><span class="value">${CHIP_EMOJI_SHORT[plan.chip]} ${CHIP_NAME_SHORT[plan.chip]}</span></div>` : ''}
     ${plan.note ? `<div class="gw-compare-line"><span class="label">Note</span><span class="value" style="font-style:italic">${escapeHtml(plan.note)}</span></div>` : ''}
-    ${!plan.outName && !plan.inName && !plan.captain && !plan.chip ? '<div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded</div>' : ''}
   </div>` : `<div class="gw-compare-col predicted"><h5>📋 You Planned</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">No plan recorded for GW${gw}</div></div>`;
   const actual = result ? `<div class="gw-compare-col actual">
     <h5>✅ Actual Result</h5>
@@ -1677,7 +1809,6 @@ function renderWeeklyRoast() {
   const plainText = '🔥 WEEKLY ROAST — GW' + currentGW + '\n\n' +
     lines.map(l => l.replace(/<[^>]*>/g, '')).join('\n') +
     '\n\n— Sent from FPL Command Center';
-
   el.innerHTML = `
     <div class="roast-header-row">
       <div class="roast-title">🔥 WEEKLY ROAST — GW${currentGW}</div>
@@ -2489,7 +2620,6 @@ document.addEventListener('keydown', e => {
   const tag = document.activeElement?.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   const key = e.key.toLowerCase();
-  if (key === 'n') { e.preventDefault(); openPlanModal(); }
   if (key === 's') { e.preventDefault(); syncAll(true); }
   if (key === 'd') { e.preventDefault(); switchView('dashboard', document.querySelector('[data-view="dashboard"]')); }
   if (key === 't') { e.preventDefault(); switchView('team', document.querySelector('[data-view="team"]')); }
@@ -2587,3 +2717,6 @@ window.doSwap = doSwap;
 window.transferOutFromAction = transferOutFromAction;
 window.scrollToGW = scrollToGW;
 window.copyRoastText = copyRoastText;
+window.refreshNews = refreshNews;
+window.filterNews = filterNews;
+window.renderNews = renderNews;
