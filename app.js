@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v11 — app.js
-   + News Tab (Nitter RSS)
+   FPL Command Center v11.1 — app.js
+   Storage-Optimized · News Tab · All Features
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -48,17 +48,14 @@ const NITTER_INSTANCES = [
 ];
 
 const NEWS_ACCOUNTS = [
-  // 🇬🇧 English
   { handle: 'OfficialFPL',     lang: 'en', flag: '🇬🇧', label: 'Fantasy Premier League' },
   { handle: 'FFScout',         lang: 'en', flag: '🇬🇧', label: 'Fantasy Football Scout' },
   { handle: 'FPLStatus',       lang: 'en', flag: '🇬🇧', label: 'FPL Status' },
   { handle: 'FPLPriceChanges', lang: 'en', flag: '🇬🇧', label: 'FPL Price Changes' },
-  // 🇸🇦 Arabic
   { handle: 'zaghal2001',      lang: 'ar', flag: '🇸🇦', label: 'Zaghal FPL' },
   { handle: 'FPL_UCF',         lang: 'ar', flag: '🇸🇦', label: 'FPL UCF' },
   { handle: 'FantasyplMania',  lang: 'ar', flag: '🇸🇦', label: 'FantasyPL Mania' },
   { handle: 'alkufani',        lang: 'ar', flag: '🇸🇦', label: 'Ali Adam' },
-  // 🇳🇱 Dutch
   { handle: 'OnsOranje',       lang: 'nl', flag: '🇳🇱', label: 'Ons Oranje' },
   { handle: 'OpaToivonen',     lang: 'nl', flag: '🇳🇱', label: 'Opa Toivonen' },
 ];
@@ -83,7 +80,6 @@ let actionPlayerId = null;
 let swapTargetId = null;
 let swapIsBench = false;
 
-// News state
 let newsCache = { tweets: [], lastFetch: 0, filter: 'all' };
 let newsLoading = false;
 
@@ -101,25 +97,47 @@ function emptyState() {
 function loadFor(id) {
   try {
     const raw = localStorage.getItem(storageKey(id));
-    if (raw) return { ...emptyState(), ...JSON.parse(raw) };
-  } catch (e) { console.warn(e); }
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Force fresh sync by leaving bootstrap/familyData null
+      // (they'll be re-fetched on load)
+      return {
+        ...emptyState(),
+        ...parsed,
+        bootstrap: null,
+        familyData: null,
+        priceRisers: [],
+        priceFallers: [],
+      };
+    }
+  } catch (e) { console.warn('Load failed, starting fresh', e); }
   return emptyState();
 }
 function saveState() {
   if (!teamId) return;
+  // Storage-optimized: only save essentials, NOT the big FPL data
   const toSave = {
     players: state.players, plans: state.plans,
     budget: state.budget, bank: state.bank,
     freeTransfers: state.freeTransfers, managerName: state.managerName,
-    bootstrap: state.bootstrap, familyData: state.familyData,
-    currentGW: state.currentGW, nextGW: state.nextGW, nextDeadline: state.nextDeadline,
-    lastSync: state.lastSync,
-    priceRisers: state.priceRisers, priceFallers: state.priceFallers,
     plannedTeams: state.plannedTeams || {},
     lastKnownGW: state.lastKnownGW || 0,
+    lastSync: state.lastSync,
+    currentGW: state.currentGW,
   };
-  try { localStorage.setItem(storageKey(teamId), JSON.stringify(toSave)); }
-  catch (e) { toast('Storage full — export a backup', true); }
+  try {
+    localStorage.setItem(storageKey(teamId), JSON.stringify(toSave));
+  } catch (e) {
+    console.warn('Storage full, clearing old keys and retrying');
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('fpl-cc-') && k !== storageKey(teamId)) localStorage.removeItem(k);
+      });
+      localStorage.setItem(storageKey(teamId), JSON.stringify(toSave));
+    } catch (e2) {
+      console.warn('Still full after cleanup, skipping save');
+    }
+  }
 }
 
 /* ========== UTILS ========== */
@@ -494,8 +512,10 @@ function startApp() {
   updateViewToggleButtons();
   window.scrollTo(0, 0);
   startAutoSync();
-  const stale = !state.lastSync || (Date.now() - state.lastSync > 30 * 60 * 1000);
-  if (stale) setTimeout(() => syncAll(false), 400);
+  // Force sync if we don't have FPL data (it's not persisted anymore)
+  const needsSync = !state.bootstrap || !state.players.length ||
+                   !state.lastSync || (Date.now() - state.lastSync > 30 * 60 * 1000);
+  if (needsSync) setTimeout(() => syncAll(false), 400);
 }
 function logout() {
   if (!confirm('Switch manager? Your data stays saved.')) return;
@@ -585,11 +605,8 @@ function startCountdown() {
   setInterval(tick, 1000);
 }
 
-/* =========================================================
-   NEWS — Nitter RSS fetching
-   ========================================================= */
+/* ========== NEWS ========== */
 async function fetchTweet(account) {
-  // Try each Nitter instance in order
   for (const instance of NITTER_INSTANCES) {
     try {
       const url = `${instance}/${account.handle}/rss`;
@@ -603,33 +620,25 @@ async function fetchTweet(account) {
   }
   return [];
 }
-
 function parseRSS(xmlText, account) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlText, 'application/xml');
   const items = doc.querySelectorAll('item');
   const tweets = [];
   items.forEach((item, i) => {
-    if (i >= 3) return; // 3 tweets per account max
+    if (i >= 3) return;
     const title = item.querySelector('title')?.textContent || '';
     const link = item.querySelector('link')?.textContent || '';
-    const creator = item.querySelector('dc\\:creator, creator')?.textContent || `@${account.handle}`;
     const pubDate = item.querySelector('pubDate')?.textContent || '';
     const description = item.querySelector('description')?.textContent || '';
-
-    // Clean up the text: remove HTML, decode entities
     let text = title.trim();
     if (!text && description) {
-      // Fallback: strip HTML from description
       const tmp = document.createElement('div');
       tmp.innerHTML = description;
       text = tmp.textContent || '';
     }
-    // Decode &apos; &amp; etc
     text = text.replace(/&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-
     if (!text || text.length < 5) return;
-
     tweets.push({
       id: `t-${account.handle}-${i}-${Date.now()}`,
       author: `@${account.handle}`,
@@ -644,18 +653,13 @@ function parseRSS(xmlText, account) {
   });
   return tweets;
 }
-
 function categorizeTweet(text) {
   const t = text.toLowerCase();
-  // Injuries
   if (/\b(injur|doubt|out for|ruled out|fitness|hamstring|knee|ankle|suspended|red card|illness)\b/.test(t)) return 'injury';
-  // Prices
-  if (/\b(price|rise|fall|cost|£|cheap|expensive|bargain|value|transfers in|transfers out)\b/.test(t)) return 'price';
-  // Fixtures
+  if (/\b(price|rise|fall|cost|cheap|expensive|bargain|value|transfers in|transfers out)\b/.test(t)) return 'price';
   if (/\b(fixture|gw|gameweek|double|blank|dgw|bgw|deadline|kickoff|ko)\b/.test(t)) return 'fixture';
   return 'general';
 }
-
 async function refreshNews(showToastMsg = true) {
   if (newsLoading) return;
   newsLoading = true;
@@ -672,10 +676,8 @@ async function refreshNews(showToastMsg = true) {
       </div>
     `;
   }
-
   const allTweets = [];
   try {
-    // Fetch all accounts in parallel, but limit concurrency to 3 at a time to avoid rate limits
     const chunks = [];
     for (let i = 0; i < NEWS_ACCOUNTS.length; i += 3) {
       chunks.push(NEWS_ACCOUNTS.slice(i, i + 3));
@@ -687,42 +689,32 @@ async function refreshNews(showToastMsg = true) {
   } catch (e) {
     console.error('News fetch error', e);
   }
-
-  // Sort by date, newest first
   allTweets.sort((a, b) => {
     const aT = a.time ? new Date(a.time).getTime() : 0;
     const bT = b.time ? new Date(b.time).getTime() : 0;
     return bT - aT;
   });
-
   newsCache = { tweets: allTweets, lastFetch: Date.now(), filter: newsCache.filter };
   newsLoading = false;
   if (refreshBtn) { refreshBtn.disabled = false; refreshBtn.textContent = '🔄 Refresh'; }
-
   renderNews(showToastMsg);
 }
-
 function renderNews(showMessage = false) {
   const grid = document.getElementById('news-grid');
   const updated = document.getElementById('news-updated');
   if (!grid) return;
-
-  // Auto-fetch if cache is empty or >15 min old
   const age = Date.now() - (newsCache.lastFetch || 0);
   if (!newsCache.tweets.length || age > 15 * 60 * 1000) {
     if (!newsLoading) refreshNews(false);
     return;
   }
-
   if (updated) {
     updated.textContent = `Updated ${timeAgo(newsCache.lastFetch)} · ${newsCache.tweets.length} tweets`;
   }
-
   let tweets = newsCache.tweets;
   if (newsCache.filter !== 'all') {
     tweets = tweets.filter(t => t.lang === newsCache.filter);
   }
-
   if (!tweets.length) {
     grid.innerHTML = `
       <div class="news-loading" style="grid-column:1/-1">
@@ -733,7 +725,6 @@ function renderNews(showMessage = false) {
     `;
     return;
   }
-
   grid.innerHTML = tweets.map(t => {
     const rtlAttr = t.lang === 'ar' ? 'dir="rtl"' : '';
     const categoryLabel = {
@@ -742,7 +733,6 @@ function renderNews(showMessage = false) {
       fixture: '📅 Fixture',
       general: '⚡ FPL',
     }[t.category];
-
     return `
       <div class="news-card" data-lang="${t.lang}" onclick="window.open('${t.url}', '_blank')">
         <div class="news-card-header">
@@ -762,7 +752,6 @@ function renderNews(showMessage = false) {
     `;
   }).join('');
 }
-
 function filterNews(filter, btn) {
   newsCache.filter = filter;
   document.querySelectorAll('.news-filter').forEach(b => b.classList.remove('active'));
@@ -827,22 +816,11 @@ function renderGWGlanceBanner() {
   const best = withLive[0];
   const worst = withLive[withLive.length - 1];
   const capPts = state.players.find(p => p.captain);
-
   const teamPts = latest.points || 0;
-  const teamQuote = teamPts > 60 ? `"${teamPts} pts. That's a haul!"` :
-                    teamPts > 45 ? `"${teamPts} pts. Solid week."` :
-                    teamPts > 30 ? `"${teamPts} pts. Could be worse."` :
-                    `"${teamPts} pts. Send help."`;
-  const bestQuote = best ? (best.pts >= 15 ? `"${best.pts} pts. Someone bring the stretcher!"` :
-                            best.pts >= 10 ? `"${best.pts} pts. Carried the team."` :
-                            `"Top score this week. Barely."`) : '';
-  const worstQuote = worst ? (worst.pts <= 1 ? `"${worst.pts} pts. Even the bench outscored him."` :
-                              worst.pts <= 2 ? `"${worst.pts} pts. Rough day."` :
-                              `"${worst.pts} pts. Quiet week."`) : '';
-  const capQuote = capPts ? (capPts.gwPoints >= 10 ? `"©️ delivered. Big brain move."` :
-                             capPts.gwPoints >= 4 ? `"©️ did OK."` :
-                             `"©️ blanked. Ouch."`) : '';
-
+  const teamQuote = teamPts > 60 ? `"${teamPts} pts. That's a haul!"` : teamPts > 45 ? `"${teamPts} pts. Solid week."` : teamPts > 30 ? `"${teamPts} pts. Could be worse."` : `"${teamPts} pts. Send help."`;
+  const bestQuote = best ? (best.pts >= 15 ? `"${best.pts} pts. Someone bring the stretcher!"` : best.pts >= 10 ? `"${best.pts} pts. Carried the team."` : `"Top score this week. Barely."`) : '';
+  const worstQuote = worst ? (worst.pts <= 1 ? `"${worst.pts} pts. Even the bench outscored him."` : worst.pts <= 2 ? `"${worst.pts} pts. Rough day."` : `"${worst.pts} pts. Quiet week."`) : '';
+  const capQuote = capPts ? (capPts.gwPoints >= 10 ? `"©️ delivered. Big brain move."` : capPts.gwPoints >= 4 ? `"©️ did OK."` : `"©️ blanked. Ouch."`) : '';
   el.innerHTML = `
     <div class="gw-glance-banner">
       <div class="glance-stat">
@@ -2044,16 +2022,10 @@ function renderGlance() {
   const leader = [...rows].sort((a, b) => b.totalPts - a.totalPts)[0];
   const gap = leader.totalPts - ([...rows].sort((a, b) => b.totalPts - a.totalPts)[1]?.totalPts || 0);
 
-  const leaderQuote = gap < 10 ? `"${gap} pts separate top from 2nd. Tense."` :
-                      gap > 50 ? `"Running away with it. Boring."` :
-                      `"Still on top. Tick tock."`;
-  const bestQuote = best.gwPts >= 70 ? `"${best.gwPts} pts! Someone bring the stretcher."` :
-                    best.gwPts >= 50 ? `"${best.gwPts} pts. Top of the week."` :
-                    `"Top score this week. Just."`;
+  const leaderQuote = gap < 10 ? `"${gap} pts separate top from 2nd. Tense."` : gap > 50 ? `"Running away with it. Boring."` : `"Still on top. Tick tock."`;
+  const bestQuote = best.gwPts >= 70 ? `"${best.gwPts} pts! Someone bring the stretcher."` : best.gwPts >= 50 ? `"${best.gwPts} pts. Top of the week."` : `"Top score this week. Just."`;
   const avgQuote = `"The average of chaos."`;
-  const worstQuote = worst.gwPts <= 40 ? `"${worst.gwPts} pts. Send help."` :
-                     worst.gwPts <= 55 ? `"${worst.gwPts} pts. Not the worst ever."` :
-                     `"${worst.gwPts} pts. Just vibing."`;
+  const worstQuote = worst.gwPts <= 40 ? `"${worst.gwPts} pts. Send help."` : worst.gwPts <= 55 ? `"${worst.gwPts} pts. Not the worst ever."` : `"${worst.gwPts} pts. Just vibing."`;
 
   el.innerHTML = `<div class="glance-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
     <div class="glance-card">
