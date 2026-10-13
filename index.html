@@ -2,14 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover"/>
 <meta name="theme-color" content="#0d0221"/>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FPL Center">
 <meta name="description" content="FPL Command Center — family league edition"/>
 <title>⚡ FPL Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 </head>
 <body>
@@ -244,13 +248,13 @@
     </section>
     <section>
       <div class="section-title">©️ Captain Picks This GW</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="captain-picks-grid">
         <div>
-          <div style="font-weight:800;font-size:0.75rem;color:var(--red);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;padding-left:8px">💀 Worst Captain</div>
+          <div class="captain-picks-label worst">💀 Worst Captain</div>
           <div class="leaderboard-card" id="worst-captain-card"><div class="empty"><span class="emoji">💀</span>Sync to load</div></div>
         </div>
         <div>
-          <div style="font-weight:800;font-size:0.75rem;color:var(--gold);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:8px;padding-left:8px">👑 Best Captain</div>
+          <div class="captain-picks-label best">👑 Best Captain</div>
           <div class="leaderboard-card" id="best-captain-card"><div class="empty"><span class="emoji">👑</span>Sync to load</div></div>
         </div>
       </div>
@@ -316,7 +320,7 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v9 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v10 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
@@ -325,6 +329,7 @@
 
 <div class="modal-overlay" id="action-modal">
   <div class="modal action-modal">
+    <div class="modal-handle"></div>
     <h3 id="action-modal-title">Player Actions</h3>
     <div id="action-modal-content"></div>
     <div class="modal-actions">
@@ -335,6 +340,7 @@
 
 <div class="modal-overlay" id="swap-modal">
   <div class="modal swap-modal">
+    <div class="modal-handle"></div>
     <h3 id="swap-modal-title">Swap Player</h3>
     <p style="color:var(--muted);font-size:0.85rem;margin-bottom:14px" id="swap-modal-sub">Choose who to bring in:</p>
     <div id="swap-modal-content"></div>
@@ -346,6 +352,7 @@
 
 <div class="modal-overlay" id="player-modal">
   <div class="modal">
+    <div class="modal-handle"></div>
     <h3 id="player-modal-title">Add Player</h3>
     <div class="field"><label>Player Name</label><input type="text" id="p-name" placeholder="e.g. Mohamed Salah" autocomplete="off" list="all-players-list"><datalist id="all-players-list"></datalist></div>
     <div class="field-row">
@@ -364,6 +371,7 @@
 
 <div class="modal-overlay" id="budget-modal">
   <div class="modal">
+    <div class="modal-handle"></div>
     <h3>Set Budget & Bank</h3>
     <div class="field"><label>Total Budget (£m)</label><input type="number" id="b-budget" step="0.1" min="0"></div>
     <div class="field"><label>Bank Available (£m)</label><input type="number" id="b-bank" step="0.1" min="0"></div>
@@ -376,6 +384,7 @@
 
 <div class="modal-overlay" id="ft-modal">
   <div class="modal">
+    <div class="modal-handle"></div>
     <h3>Set Free Transfers</h3>
     <div class="field"><label>Free Transfers Available</label><input type="number" id="ft-value" step="1" min="0" max="5"></div>
     <div class="modal-actions">
@@ -387,6 +396,7 @@
 
 <div class="modal-overlay" id="plan-modal">
   <div class="modal">
+    <div class="modal-handle"></div>
     <h3 id="plan-modal-title">Add Transfer Plan</h3>
     <div class="field"><label>Gameweek</label><input type="number" id="pl-gw" min="1" max="38" value="1"></div>
     <div class="field-row">
@@ -448,12 +458,14 @@
 
 <div class="modal-overlay" id="perf-modal">
   <div class="modal perf-modal">
+    <div class="modal-handle"></div>
     <div id="perf-modal-content"></div>
   </div>
 </div>
 
 <div class="modal-overlay" id="help-modal">
   <div class="modal">
+    <div class="modal-handle"></div>
     <h3>❓ How it works</h3>
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh data when you return to the tab (if >30 min old).</p>
@@ -470,6 +482,7 @@
 
 <div class="modal-overlay" id="shortcuts-modal">
   <div class="modal">
+    <div class="modal-handle"></div>
     <h3>⌨️ Keyboard Shortcuts</h3>
     <div class="shortcuts-list">
       <div class="shortcut-row"><kbd>N</kbd><span>New transfer plan</span></div>
