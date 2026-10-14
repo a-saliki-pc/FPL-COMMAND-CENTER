@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v11.1 — app.js
-   Storage-Optimized · News Tab · All Features
+   FPL Command Center v12 — app.js
+   Storage-Optimized · News Tab · Current GW Card · All Features
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -99,8 +99,6 @@ function loadFor(id) {
     const raw = localStorage.getItem(storageKey(id));
     if (raw) {
       const parsed = JSON.parse(raw);
-      // Force fresh sync by leaving bootstrap/familyData null
-      // (they'll be re-fetched on load)
       return {
         ...emptyState(),
         ...parsed,
@@ -115,7 +113,6 @@ function loadFor(id) {
 }
 function saveState() {
   if (!teamId) return;
-  // Storage-optimized: only save essentials, NOT the big FPL data
   const toSave = {
     players: state.players, plans: state.plans,
     budget: state.budget, bank: state.bank,
@@ -229,11 +226,7 @@ function updateSyncDot() {
   const dot = document.getElementById('sync-dot');
   const wrap = document.getElementById('sync-dot-wrap');
   if (!dot || !wrap) return;
-  if (isSyncing) {
-    dot.className = 'sync-dot syncing';
-    wrap.title = 'Syncing now...';
-    return;
-  }
+  if (isSyncing) { dot.className = 'sync-dot syncing'; wrap.title = 'Syncing now...'; return; }
   const last = state?.lastSync || 0;
   const age = Date.now() - last;
   if (!last) { dot.className = 'sync-dot old'; wrap.title = 'Never synced'; return; }
@@ -512,7 +505,6 @@ function startApp() {
   updateViewToggleButtons();
   window.scrollTo(0, 0);
   startAutoSync();
-  // Force sync if we don't have FPL data (it's not persisted anymore)
   const needsSync = !state.bootstrap || !state.players.length ||
                    !state.lastSync || (Date.now() - state.lastSync > 30 * 60 * 1000);
   if (needsSync) setTimeout(() => syncAll(false), 400);
@@ -566,6 +558,7 @@ function switchView(name, el) {
       setTimeout(() => switchView('planner', document.querySelector('[data-view="planner"]')), 800);
       return;
     }
+    renderCurrentGWCard();
     renderSeasonPlanner();
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -765,6 +758,7 @@ function renderAll() {
   renderGWGlanceBanner();
   renderSquad();
   renderStats();
+  renderCurrentGWCard();
   renderCaptainSuggestion();
   renderPriceChanges();
   renderMiniLeaderboard();
@@ -870,6 +864,134 @@ function renderStats() {
     document.getElementById('stat-worst').textContent = worst.points;
     document.getElementById('stat-worst-sub').textContent = `GW${worst.event}`;
   }
+}
+
+/* ========== CURRENT GW CARD ========== */
+function renderCurrentGWCard() {
+  const el = document.getElementById('current-gw-card');
+  if (!el) return;
+
+  const mine = state.familyData?.find(f => f.id === teamId);
+  const current = mine?.history?.current || [];
+  const latest = current[current.length - 1];
+
+  if (!latest) {
+    el.innerHTML = '<div class="empty" style="padding:20px"><span class="emoji">🔥</span>Sync to see this GW\'s score</div>';
+    return;
+  }
+
+  const gw = state.currentGW || latest.event;
+  const liveGW = state.bootstrap?.events?.find(e => e.id === gw);
+  const isLive = liveGW?.is_current && !liveGW?.finished;
+  const isFinished = liveGW?.finished;
+
+  // Rank movement vs previous GW
+  const prevGW = gw - 1;
+  const prevHist = current.find(g => g.event === prevGW);
+  const rankDelta = prevHist ? (prevHist.overall_rank - latest.overall_rank) : 0;
+  const rankArrow = rankDelta > 0
+    ? `▲ ${rankDelta.toLocaleString()}`
+    : rankDelta < 0
+      ? `▼ ${Math.abs(rankDelta).toLocaleString()}`
+      : '—';
+  const rankClass = rankDelta > 0 ? 'good' : rankDelta < 0 ? 'bad' : '';
+
+  // Points vs average
+  const avg = latest.average_entry_score || 0;
+  const ptsDiff = (latest.points || 0) - avg;
+  const ptsDiffLabel = ptsDiff > 0
+    ? `+${ptsDiff} vs avg`
+    : ptsDiff < 0
+      ? `${ptsDiff} vs avg`
+      : 'On average';
+  const ptsClass = ptsDiff > 0 ? 'good' : ptsDiff < 0 ? 'bad' : '';
+
+  // Best/worst player this GW (live data if available)
+  const withLive = state.players.map(p => {
+    const live = liveDataCache[gw]?.[p.fplId];
+    const pts = live?.stats?.total_points ?? p.gwPoints ?? 0;
+    return { name: p.name, pts, pos: p.pos };
+  }).sort((a, b) => b.pts - a.pts);
+  const best = withLive[0];
+  const worst = withLive[withLive.length - 1];
+
+  // Captain
+  const cap = state.players.find(p => p.captain);
+  const capLive = cap
+    ? (liveDataCache[gw]?.[cap.fplId]?.stats?.total_points ?? cap.gwPoints ?? 0)
+    : 0;
+
+  // Chip used
+  const chipUsed = latest.active_chip || null;
+  const chipLabel = chipUsed
+    ? `${CHIP_EMOJI[chipUsed] || ''} ${CHIP_NAME[chipUsed] || chipUsed}`
+    : '— no chip';
+
+  // Deadline countdown
+  const deadline = state.nextDeadline ? new Date(state.nextDeadline) : null;
+  let deadlineText = '—';
+  if (deadline && deadline > new Date()) {
+    const diff = deadline - new Date();
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    deadlineText = d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  // Transfers
+  const transfers = latest.event_transfers || 0;
+  const transferCost = latest.event_transfers_cost || 0;
+  const transferLabel = transfers === 0
+    ? 'No transfers'
+    : `${transfers} transfer${transfers > 1 ? 's' : ''}${transferCost ? ` (-${transferCost} pts)` : ''}`;
+
+  // Status badge
+  let statusBadge;
+  if (isFinished) statusBadge = '<span class="current-gw-final-badge">Final</span>';
+  else if (isLive) statusBadge = '<span class="current-gw-live-badge">● Live</span>';
+  else statusBadge = '<span class="current-gw-final-badge">Awaiting</span>';
+
+  el.innerHTML = `
+    <div class="current-gw-header">
+      <div class="current-gw-title">GW${gw} ${statusBadge}</div>
+      <div style="font-size:0.75rem;color:var(--muted);font-weight:700">
+        ${deadlineText !== '—' && !isFinished ? `⏰ Deadline in ${deadlineText}` : ''}
+      </div>
+    </div>
+    <div class="current-gw-stats">
+      <div class="current-gw-stat">
+        <div class="label">Points</div>
+        <div class="value good">${latest.points || 0}</div>
+        <div class="sub ${ptsClass}">${ptsDiffLabel}</div>
+      </div>
+      <div class="current-gw-stat">
+        <div class="label">Overall Rank</div>
+        <div class="value">${fmtRank(latest.overall_rank)}</div>
+        <div class="sub ${rankClass}">${rankArrow !== '—' ? rankArrow + ' this GW' : '—'}</div>
+      </div>
+      <div class="current-gw-stat">
+        <div class="label">🔥 Best Player</div>
+        <div class="value good">${best ? best.pts : 0}</div>
+        <div class="sub">${best ? escapeHtml(best.name) : '—'}</div>
+      </div>
+      <div class="current-gw-stat">
+        <div class="label">💀 Worst Player</div>
+        <div class="value bad">${worst ? worst.pts : 0}</div>
+        <div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div>
+      </div>
+      <div class="current-gw-stat">
+        <div class="label">©️ Captain</div>
+        <div class="value">${cap ? capLive : '—'}</div>
+        <div class="sub">${cap ? escapeHtml(cap.name) : 'Not set'}</div>
+      </div>
+    </div>
+    <div class="current-gw-footer">
+      <span>💸 <strong>${transferLabel}</strong></span>
+      <span>🃏 <strong>${chipLabel}</strong></span>
+      <span>💰 Bank <strong>${fmt((latest.bank || 0) / 10)}</strong></span>
+      <span>📈 Value <strong>${fmt((latest.value || 0) / 10)}</strong></span>
+    </div>
+  `;
 }
 
 function renderCaptainSuggestion() {
@@ -2692,3 +2814,4 @@ window.copyRoastText = copyRoastText;
 window.refreshNews = refreshNews;
 window.filterNews = filterNews;
 window.renderNews = renderNews;
+window.renderCurrentGWCard = renderCurrentGWCard;
