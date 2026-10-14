@@ -208,8 +208,17 @@
 
   <!-- SEASON PLANNER -->
   <div id="view-planner" class="view" style="display:none">
+
+    <!-- CURRENT GW SUMMARY -->
     <section>
-      <div class="section-title">🗓 Full Season Planner</div>
+      <div class="section-title">🔥 Current Gameweek</div>
+      <div id="current-gw-card" class="current-gw-card">
+        <div class="empty" style="padding:20px">Sync to see this GW's score</div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">🗓 Season Planner</div>
       <div class="planner-status-bar" id="planner-status-bar">
         <div class="status-pill"><span class="status-label">Bank</span><span class="status-value" id="pl-status-bank">—</span></div>
         <div class="status-pill"><span class="status-label">Squad Value</span><span class="status-value" id="pl-status-value">—</span></div>
@@ -346,7 +355,7 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v11 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v12 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
@@ -496,7 +505,7 @@
     <div style="font-size:0.88rem;line-height:1.7;color:var(--muted)">
       <p><strong style="color:var(--text)">1. Auto-sync</strong> — pulls fresh FPL data when you return to the tab (if >30 min old).</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">2. My Team tab</strong> — Pitch/List view with player faces.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">3. Plan Next GW</strong> — enter planning mode to swap players, set captain, transfer out.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">3. Planner tab</strong> — Current GW score at top, then plan the next GW below.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">4. News tab</strong> — live tweets from top FPL accounts in English, Arabic & Dutch.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">5. Player details</strong> — click any player to see full performance breakdown.</p>
     </div>
@@ -518,7 +527,6 @@
       <div class="shortcut-row"><kbd>P</kbd><span>Planner tab</span></div>
       <div class="shortcut-row"><kbd>L</kbd><span>Family League tab</span></div>
       <div class="shortcut-row"><kbd>H</kbd><span>My History tab</span></div>
-      <div class="shortcut-row"><kbd>N</kbd><span>News tab (only when not typing)</span></div>
       <div class="shortcut-row"><kbd>V</kbd><span>Toggle Pitch / List view</span></div>
       <div class="shortcut-row"><kbd>Esc</kbd><span>Close any modal</span></div>
     </div>
