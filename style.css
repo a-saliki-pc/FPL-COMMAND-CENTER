@@ -1,5 +1,5 @@
 /* =========================================================
-   FPL Command Center v12 — style.css
+   FPL Command Center v13 — style.css
    ========================================================= */
 
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -181,6 +181,12 @@ section { margin-bottom: 40px; }
 .glance-stat .value.bad { color: var(--red); }
 .glance-stat .sub { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
 
+/* ===== NEW: Glance Card (League tab, This Week at a Glance) ===== */
+.glance-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; padding: 16px; text-align: center; }
+.glance-card .label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 700; margin-bottom: 6px; }
+.glance-card .value { font-size: 1.6rem; font-weight: 900; color: var(--mint); }
+.glance-card .sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
 /* LEADERBOARD */
 .leaderboard-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 8px; overflow: hidden; }
 .lb-row { display: grid; grid-template-columns: 44px 1fr 80px 80px 100px; gap: 8px; align-items: center; padding: 14px 12px; border-bottom: 1px solid var(--glass-border); transition: all 0.2s; }
@@ -205,6 +211,10 @@ body.light-mode .lb-row.me { background: rgba(5,150,105,0.08); }
 .roast-header-row .roast-title { margin-bottom: 0; flex: 1; }
 .roast-title { font-weight: 800; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.15em; color: var(--pink); margin-bottom: 12px; }
 .roast-copy-btn { flex-shrink: 0; font-size: 0.68rem !important; padding: 8px 14px !important; }
+
+/* ===== NEW: Roast button row ===== */
+.roast-btn-row { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+
 .roast-line { font-size: 0.92rem; line-height: 1.7; color: var(--text); margin-bottom: 8px; }
 .roast-line:last-child { margin-bottom: 0; }
 .roast-line strong { color: var(--mint); }
@@ -231,90 +241,19 @@ body.light-mode .lb-row.me { background: rgba(5,150,105,0.08); }
   height: 3px;
   background: linear-gradient(90deg, var(--pink), var(--gold));
 }
-.current-gw-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.current-gw-title {
-  font-size: 1.15rem;
-  font-weight: 900;
-  color: var(--pink);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.current-gw-live-badge {
-  background: var(--red);
-  color: white;
-  font-size: 0.62rem;
-  font-weight: 800;
-  padding: 3px 8px;
-  border-radius: 5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  animation: pulse-soft 1.5s infinite;
-}
-.current-gw-final-badge {
-  background: rgba(167,139,250,0.2);
-  color: var(--muted);
-  font-size: 0.62rem;
-  font-weight: 800;
-  padding: 3px 8px;
-  border-radius: 5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.current-gw-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
-}
-.current-gw-stat {
-  background: rgba(0,0,0,0.25);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  padding: 14px;
-  text-align: center;
-}
+.current-gw-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+.current-gw-title { font-size: 1.15rem; font-weight: 900; color: var(--pink); display: flex; align-items: center; gap: 8px; }
+.current-gw-live-badge { background: var(--red); color: white; font-size: 0.62rem; font-weight: 800; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.08em; text-transform: uppercase; animation: pulse-soft 1.5s infinite; }
+.current-gw-final-badge { background: rgba(167,139,250,0.2); color: var(--muted); font-size: 0.62rem; font-weight: 800; padding: 3px 8px; border-radius: 5px; letter-spacing: 0.08em; text-transform: uppercase; }
+.current-gw-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; }
+.current-gw-stat { background: rgba(0,0,0,0.25); border: 1px solid var(--glass-border); border-radius: 12px; padding: 14px; text-align: center; }
 body.light-mode .current-gw-stat { background: rgba(0,0,0,0.03); }
-.current-gw-stat .label {
-  font-size: 0.62rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--muted);
-  font-weight: 800;
-  margin-bottom: 6px;
-}
-.current-gw-stat .value {
-  font-size: 1.5rem;
-  font-weight: 900;
-  letter-spacing: -0.02em;
-  color: var(--text);
-}
+.current-gw-stat .label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 800; margin-bottom: 6px; }
+.current-gw-stat .value { font-size: 1.5rem; font-weight: 900; letter-spacing: -0.02em; color: var(--text); }
 .current-gw-stat .value.good { color: var(--mint); }
 .current-gw-stat .value.bad { color: var(--red); }
-.current-gw-stat .sub {
-  font-size: 0.72rem;
-  color: var(--muted);
-  margin-top: 3px;
-  font-weight: 600;
-}
-.current-gw-footer {
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--glass-border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
+.current-gw-stat .sub { font-size: 0.72rem; color: var(--muted); margin-top: 3px; font-weight: 600; }
+.current-gw-footer { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--glass-border); display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); }
 .current-gw-footer strong { color: var(--text); }
 
 /* CHART */
@@ -426,37 +365,13 @@ body.light-mode .gw-table th { background: rgba(0,0,0,0.05); }
   position: relative;
   z-index: 2;
 }
-.pitch-row {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-bottom: 20px;
-  position: relative;
-  z-index: 2;
-  flex-wrap: wrap;
-}
+.pitch-row { display: flex; justify-content: center; gap: 12px; margin-bottom: 20px; position: relative; z-index: 2; flex-wrap: wrap; }
 .pitch-row.fwd { margin-top: 20px; }
 .pitch-row.mid { margin-bottom: 40px; }
 .pitch-row.def { margin-bottom: 40px; }
 .pitch-row.gk { margin-bottom: 10px; }
 
-.pitch-card {
-  background: rgba(0,0,0,0.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border-radius: 12px;
-  padding: 8px 10px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  min-width: 82px;
-  max-width: 105px;
-  position: relative;
-  border: 2px solid rgba(255,255,255,0.15);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-  -webkit-user-select: none;
-  user-select: none;
-}
+.pitch-card { background: rgba(0,0,0,0.55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 12px; padding: 8px 10px; text-align: center; cursor: pointer; transition: all 0.2s; min-width: 82px; max-width: 105px; position: relative; border: 2px solid rgba(255,255,255,0.15); box-shadow: 0 4px 16px rgba(0,0,0,0.4); -webkit-user-select: none; user-select: none; }
 .pitch-card:hover { transform: translateY(-4px) scale(1.05); border-color: var(--mint); box-shadow: 0 8px 30px rgba(0,255,135,0.4); z-index: 10; }
 .pitch-card:active { transform: translateY(-2px) scale(1.02); }
 .pitch-card.captain { border-color: var(--gold); box-shadow: 0 0 20px rgba(255,185,46,0.6); }
@@ -926,6 +841,8 @@ footer a { color: var(--mint); text-decoration: none; }
   .gw-glance-banner { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .glance-stat { padding: 16px; }
   .glance-stat .value { font-size: 1.35rem; }
+  /* NEW mobile: stack glance-card too */
+  .glance-card { padding: 14px; }
 
   .team-summary-banner { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .team-summary-item { padding: 14px; }
@@ -934,6 +851,9 @@ footer a { color: var(--mint); text-decoration: none; }
   .roast-card { padding: 28px 18px 20px; }
   .roast-header-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .roast-copy-btn { width: 100%; justify-content: center; min-height: 48px; }
+  /* NEW mobile: stack roast buttons */
+  .roast-btn-row { width: 100%; flex-direction: column; gap: 8px; }
+  .roast-btn-row .btn { width: 100%; justify-content: center; }
 
   .captain-picks-grid { grid-template-columns: 1fr; gap: 16px; }
 
@@ -1042,7 +962,8 @@ html.light-mode .manager-pill, html.light-mode .btn, html.light-mode .gw-chip,
 html.light-mode .player-result, html.light-mode .welcome-card, html.light-mode .modal,
 html.light-mode .chip-card, html.light-mode .trophy-item, html.light-mode .gw-accordion,
 html.light-mode .mini-plan-row, html.light-mode .planner-status-bar,
-html.light-mode .glance-stat, html.light-mode .perf-info-card,
+html.light-mode .glance-stat, html.light-mode .glance-card,
+html.light-mode .perf-info-card,
 html.light-mode .team-summary-item, html.light-mode .action-btn, html.light-mode .swap-option,
 html.light-mode .news-card, html.light-mode .news-filter {
   background: rgba(255,255,255,0.75) !important;
