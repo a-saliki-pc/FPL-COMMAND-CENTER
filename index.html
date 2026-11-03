@@ -209,7 +209,6 @@
   <!-- SEASON PLANNER -->
   <div id="view-planner" class="view" style="display:none">
 
-    <!-- CURRENT GW SUMMARY -->
     <section>
       <div class="section-title">🔥 Current Gameweek</div>
       <div id="current-gw-card" class="current-gw-card">
@@ -355,7 +354,7 @@
 </main>
 
 <footer>
-  ⚡ FPL Command Center v12 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
+  ⚡ FPL Command Center v13 · <a href="#" onclick="exportData();return false;">Backup</a> · <a href="#" onclick="showHelp();return false;">Help</a> · <a href="#" onclick="showShortcuts();return false;">Shortcuts</a>
 </footer>
 
 </div>
@@ -498,6 +497,23 @@
   </div>
 </div>
 
+<!-- NEW: Nicknames editor -->
+<div class="modal-overlay" id="nicknames-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>✏️ Edit Nicknames</h3>
+    <p style="color:var(--muted);font-size:0.8rem;margin-bottom:14px;line-height:1.5">
+      These are the funny names used in the WhatsApp roast. The last-place player gets a rotating shame nickname automatically.
+    </p>
+    <div id="nicknames-form"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="resetNicknames()">↺ Reset Default</button>
+      <button class="btn" onclick="closeModal('nicknames-modal')">Cancel</button>
+      <button class="btn primary" onclick="saveNicknames()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="help-modal">
   <div class="modal">
     <div class="modal-handle"></div>
@@ -507,7 +523,8 @@
       <p style="margin-top:10px"><strong style="color:var(--text)">2. My Team tab</strong> — Pitch/List view with player faces.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">3. Planner tab</strong> — Current GW score at top, then plan the next GW below.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">4. News tab</strong> — live tweets from top FPL accounts in English, Arabic & Dutch.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">5. Player details</strong> — click any player to see full performance breakdown.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">5. League tab</strong> — Weekly Roast you can copy to WhatsApp, with funny nicknames per family member and a savage burn for last place. Tap <strong>✏️ Names</strong> to edit the nicknames.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">6. Player details</strong> — click any player to see full performance breakdown.</p>
     </div>
     <div class="modal-actions">
       <button class="btn primary" onclick="closeModal('help-modal')">Got it</button>
