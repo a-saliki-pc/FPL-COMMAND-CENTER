@@ -1,6 +1,6 @@
 /* =========================================================
-   FPL Command Center v12 — app.js
-   Storage-Optimized · News Tab · Current GW Card · All Features
+   FPL Command Center v13 — app.js
+   Storage-Optimized · News Tab · Current GW Card · Roast System
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -9,11 +9,78 @@ const IMG_BASE = 'https://resources.premierleague.com/premierleague/photos/playe
 const BADGE_BASE = 'https://resources.premierleague.com/premierleague25/badges';
 
 const FAMILY = [
-  { id: '1115676', name: 'Adyb Saliki',   emoji: '🧠' },
-  { id: '3719511', name: 'Yassine Saied', emoji: '🚀' },
-  { id: '3844150', name: 'Ismail Saliki', emoji: '🎲' },
-  { id: '1115993', name: 'Youssef Said',  emoji: '🐢' },
-  { id: '6849321', name: 'Zakaria Said',  emoji: '😎' },
+  { id: '1115676', name: 'Adyb Saliki',    emoji: '🧠' },
+  { id: '3719511', name: 'Yassine Saied',  emoji: '🚀' },
+  { id: '3844150', name: 'Ismail Saliki',  emoji: '🎲' },
+  { id: '1115993', name: 'Youssef Said',   emoji: '🐢' },
+  { id: '6849321', name: 'Zakaria Said',   emoji: '😎' },
+];
+
+/* ========== NICKNAMES (editable in-app via ✏️ Names) ========== */
+const DEFAULT_NICKNAMES = {
+  '1115676': 'The Tactician 🧠',
+  '3719511': 'The Rocket 🚀',
+  '3844150': 'The Gambler 🎲',
+  '1115993': 'The Turtle 🐢',
+  '6849321': 'The Vibes Merchant 😎',
+};
+let NICKNAMES = { ...DEFAULT_NICKNAMES };
+
+const SHAME_NICKNAMES = [
+  'Ciment Bag 🛍️',
+  'Backpack 🎒',
+  'The Waterboy 💧',
+  'Benchwarmer 🪑',
+  'The Wooden Spoon 🥄',
+  'Bin Bag 🗑️',
+  'The Mascot 🐔',
+  'Sticky Gloves 🧤',
+  'The Pylon 🚧',
+  'Discount Mbappé 🥴',
+  'The Ghost 👻',
+  'Concrete Boots 🥾',
+  'The Turnstile 🚪',
+  'Statue 🗿',
+  'Traffic Cone 🚧',
+  'The Cheerleader 📣',
+  'Ball Boy ⚽',
+  'The Understudy 🎭',
+  'The Intern 📎',
+  'Gym Pass Holder 🏋️',
+];
+
+const BURN_LEADER = [
+  "Top of the pile. Don't let it slip.",
+  'Enjoying the view from the summit. For now.',
+  'The crown is heavy. Keep holding it.',
+  'Bragging rights secured. Barely.',
+];
+const BURN_MID = [
+  'Floating in mediocrity. Classic.',
+  'The definition of "meh".',
+  'Not good, not bad. Just there.',
+  'Mid-table energy. Very mid.',
+  'Aggressively average.',
+];
+const BURN_BOTTOM = [
+  'The wooden spoon is warming up.',
+  'Sweating more than the players.',
+  'The bin is calling. Answer it.',
+  'Even the bench is embarrassed.',
+  'Trust the process? The process left.',
+];
+const BURN_LAST_EXTRA = [
+  'Last place. Legendary effort to get here.',
+  'You are the reason the group chat exists.',
+  'Statistically the worst. Emotionally too.',
+  'The rest of us thank you for your service.',
+  'Screenshot this. Frame it. Live with it.',
+  "You've unlocked a new low. Congrats.",
+  'Somebody get this man a wildcard. Or a prayer.',
+  'The wooden spoon has your name engraved.',
+  "If FPL had a relegation zone, you'd be in it.",
+  'At least your team bus arrived on time.',
+  'The only thing dropping faster than your rank is your dignity.',
 ];
 
 const POS_MAP = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };
@@ -39,6 +106,14 @@ const MOOD_EMOJI = { hot: '🔥', climbing: '📈', steady: '➡️', slipping: 
 const ROAST_BEST = ["Peaked early. Enjoy it while it lasts.", "Wildcard magic or pure luck? We'll never know.", "The differentials finally paid off.", "Captained the right guy for once.", "Even a broken clock is right twice a day.", "Bench boost finally justified its existence.", "Putting the family on notice.", "This is what happens when the picks work.", "Somebody call Guinness — this was elite.", "The template delivered. Fair play."];
 const ROAST_WORST = ["Could have been worse. It wasn't much better.", "Even the bench outscored him this week.", "Sweating through a premium pick that blanked.", "Started the season in clown mode. Legendary.", "Died on the pitch. RIP his GW.", "Straight to the bin. Nothing saved.", "At least the app didn't crash. Silver linings.", "Someone check on him.", "The wooden spoon is calling.", "Trusted his gut. His gut was wrong. Again."];
 const ROAST_WEEKLY = ["Family group chat is going to be spicy this week.", "Somebody's getting roasted in the WhatsApp group.", "Rivalries intensifying. Popcorn ready.", "Nobody wants to be last. Yet here we are.", "Peak drama. Peak FPL. Peak family.", "Remember: it's just a game. (It's not.)", "Screenshots incoming. Defend yourselves."];
+
+/* Restore saved nicknames from localStorage */
+(function restoreNicknames() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('fpl-cc-nicknames') || '{}');
+    Object.assign(NICKNAMES, saved);
+  } catch (e) {}
+})();
 
 /* ========== NEWS ACCOUNTS ========== */
 const NITTER_INSTANCES = [
@@ -78,10 +153,11 @@ let planningGW = null;
 let plannedTeam = null;
 let actionPlayerId = null;
 let swapTargetId = null;
-let swapIsBench = false;
 
 let newsCache = { tweets: [], lastFetch: 0, filter: 'all' };
 let newsLoading = false;
+
+let nicknamesDraft = {};
 
 function storageKey(id) { return `fpl-cc-v6:${id}`; }
 function emptyState() {
@@ -102,10 +178,7 @@ function loadFor(id) {
       return {
         ...emptyState(),
         ...parsed,
-        bootstrap: null,
-        familyData: null,
-        priceRisers: [],
-        priceFallers: [],
+        bootstrap: null, familyData: null, priceRisers: [], priceFallers: [],
       };
     }
   } catch (e) { console.warn('Load failed, starting fresh', e); }
@@ -125,24 +198,29 @@ function saveState() {
   try {
     localStorage.setItem(storageKey(teamId), JSON.stringify(toSave));
   } catch (e) {
-    console.warn('Storage full, clearing old keys and retrying');
-    try {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('fpl-cc-') && k !== storageKey(teamId)) localStorage.removeItem(k);
-      });
-      localStorage.setItem(storageKey(teamId), JSON.stringify(toSave));
-    } catch (e2) {
-      console.warn('Still full after cleanup, skipping save');
-    }
+    // FIX: don't wipe other teams' data — just warn and skip
+    console.warn('Storage full — skipping save (not wiping other teams)', e);
+    toast('⚠️ Storage full — changes not saved', true);
   }
 }
 
 /* ========== UTILS ========== */
 function uid() { return Math.random().toString(36).slice(2, 10); }
 function fmt(n) { return '£' + Number(n || 0).toFixed(1) + 'm'; }
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+// FIX: sanitize URLs before inserting into href/onclick
+function sanitizeUrl(u) {
+  const s = String(u || '');
+  if (/^https?:\/\//i.test(s)) return s;
+  return '#';
+}
 function toast(msg, isError = false) {
   const t = document.getElementById('toast');
+  if (!t) return;
   t.textContent = msg;
   t.className = 'toast' + (isError ? ' error' : '');
   requestAnimationFrame(() => t.classList.add('show'));
@@ -248,10 +326,7 @@ async function proxyFetch(targetUrl) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
   return res.text();
 }
-function playerImgUrl(el) {
-  if (!el || !el.code) return '';
-  return `${IMG_BASE}/p${el.code}.png`;
-}
+function playerImgUrl(el) { return (el && el.code) ? `${IMG_BASE}/p${el.code}.png` : ''; }
 function getTeamInfo(teamIdNum) {
   if (!state.bootstrap) return { name: '?', short: '?', badge: '' };
   const t = state.bootstrap.teams.find(x => x.id === teamIdNum);
@@ -394,7 +469,6 @@ async function syncAll(showToast = true) {
 
     fetchPriceChanges(boot.elements);
     liveDataCache = {};
-    captainHistoryCache = null;
     fixturesCache = {};
     gwResultCache = {};
 
@@ -471,13 +545,15 @@ function mergeMySquad(picksData) {
   const hist = picksData.entry_history;
   if (hist) {
     state.bank = (hist.bank || 0) / 10;
-    state.budget = state.bank + state.players.reduce((s, p) => s + p.price, 0);
+    // FIX: use actual squad value when available (matches FPL header)
+    state.budget = hist.value ? (hist.value / 10) : (state.bank + state.players.reduce((s, p) => s + p.price, 0));
   }
 }
 
 /* ========== WELCOME ========== */
 function renderManagerPicker() {
   const wrap = document.getElementById('manager-picker');
+  if (!wrap) return;
   wrap.innerHTML = FAMILY.map(m => `
     <button class="manager-pill" data-id="${m.id}" onclick="pickManager('${m.id}', this)">
       ${m.emoji} ${escapeHtml(m.name)}<small>Team ID ${m.id}</small>
@@ -487,7 +563,8 @@ function pickManager(id, el) {
   pickedId = id;
   document.querySelectorAll('.manager-pill').forEach(p => p.classList.remove('selected'));
   if (el) el.classList.add('selected');
-  document.getElementById('welcome-team-id').value = id;
+  const inp = document.getElementById('welcome-team-id');
+  if (inp) inp.value = id;
 }
 function startApp() {
   const id = pickedId || document.getElementById('welcome-team-id').value.trim();
@@ -570,6 +647,8 @@ function startCountdown() {
   const wrap = document.getElementById('hdr-deadline-wrap');
   if (!el) return;
   function tick() {
+    // FIX: pause countdown when tab hidden (battery)
+    if (document.visibilityState === 'hidden') return;
     let deadline = state?.nextDeadline;
     if (!deadline && state?.bootstrap?.events) {
       const next = state.bootstrap.events.find(e => e.is_next) || state.bootstrap.events.find(e => !e.finished);
@@ -586,12 +665,12 @@ function startCountdown() {
     else if (h > 0) el.textContent = `${h}h ${m}m ${s}s`;
     else el.textContent = `${m}m ${s}s`;
     if (wrap) wrap.classList.toggle('urgent', diff < 6 * 3600000);
-    const focusDeadline = document.getElementById('focus-deadline');
-    if (focusDeadline) {
-      if (diff <= 0) focusDeadline.textContent = '🔴 Live now';
-      else if (d > 0) focusDeadline.textContent = `⏰ Deadline in ${d}d ${h}h`;
-      else if (h > 0) focusDeadline.textContent = `⏰ Deadline in ${h}h ${m}m`;
-      else focusDeadline.textContent = `⏰ Deadline in ${m}m`;
+    const fd = document.getElementById('focus-deadline');
+    if (fd) {
+      if (diff <= 0) fd.textContent = '🔴 Live now';
+      else if (d > 0) fd.textContent = `⏰ Deadline in ${d}d ${h}h`;
+      else if (h > 0) fd.textContent = `⏰ Deadline in ${h}h ${m}m`;
+      else fd.textContent = `⏰ Deadline in ${m}m`;
     }
   }
   tick();
@@ -705,9 +784,7 @@ function renderNews(showMessage = false) {
     updated.textContent = `Updated ${timeAgo(newsCache.lastFetch)} · ${newsCache.tweets.length} tweets`;
   }
   let tweets = newsCache.tweets;
-  if (newsCache.filter !== 'all') {
-    tweets = tweets.filter(t => t.lang === newsCache.filter);
-  }
+  if (newsCache.filter !== 'all') tweets = tweets.filter(t => t.lang === newsCache.filter);
   if (!tweets.length) {
     grid.innerHTML = `
       <div class="news-loading" style="grid-column:1/-1">
@@ -726,8 +803,10 @@ function renderNews(showMessage = false) {
       fixture: '📅 Fixture',
       general: '⚡ FPL',
     }[t.category];
+    // FIX: sanitize URL and use data-attribute + delegated click (no XSS)
+    const safeUrl = sanitizeUrl(t.url);
     return `
-      <div class="news-card" data-lang="${t.lang}" onclick="window.open('${t.url}', '_blank')">
+      <div class="news-card" data-lang="${t.lang}" data-url="${escapeHtml(safeUrl)}" onclick="openNewsUrl(this)">
         <div class="news-card-header">
           <div class="news-avatar" style="display:flex;align-items:center;justify-content:center;font-size:1.4rem">${t.flag}</div>
           <div class="news-author-info">
@@ -744,6 +823,11 @@ function renderNews(showMessage = false) {
       </div>
     `;
   }).join('');
+}
+// FIX: safe click handler for news cards
+function openNewsUrl(cardEl) {
+  const url = cardEl?.getAttribute('data-url') || '#';
+  if (url && url !== '#') window.open(url, '_blank', 'noopener');
 }
 function filterNews(filter, btn) {
   newsCache.filter = filter;
@@ -790,7 +874,8 @@ function renderHeader() {
   document.getElementById('hdr-points').textContent = latest?.total_points || '—';
   document.getElementById('hdr-rank').textContent = fmtRank(latest?.overall_rank || 0);
   document.getElementById('hdr-bank').textContent = fmt(state.bank);
-  document.getElementById('hdr-value').textContent = fmt(squadValue);
+  // FIX: prefer actual squad value from FPL history
+  document.getElementById('hdr-value').textContent = fmt(latest?.value ? latest.value / 10 : squadValue);
   document.getElementById('hdr-ft').textContent = state.freeTransfers;
 }
 
@@ -885,7 +970,6 @@ function renderCurrentGWCard() {
   const isLive = liveGW?.is_current && !liveGW?.finished;
   const isFinished = liveGW?.finished;
 
-  // Rank movement vs previous GW
   const prevGW = gw - 1;
   const prevHist = current.find(g => g.event === prevGW);
   const rankDelta = prevHist ? (prevHist.overall_rank - latest.overall_rank) : 0;
@@ -896,7 +980,6 @@ function renderCurrentGWCard() {
       : '—';
   const rankClass = rankDelta > 0 ? 'good' : rankDelta < 0 ? 'bad' : '';
 
-  // Points vs average
   const avg = latest.average_entry_score || 0;
   const ptsDiff = (latest.points || 0) - avg;
   const ptsDiffLabel = ptsDiff > 0
@@ -906,7 +989,6 @@ function renderCurrentGWCard() {
       : 'On average';
   const ptsClass = ptsDiff > 0 ? 'good' : ptsDiff < 0 ? 'bad' : '';
 
-  // Best/worst player this GW (live data if available)
   const withLive = state.players.map(p => {
     const live = liveDataCache[gw]?.[p.fplId];
     const pts = live?.stats?.total_points ?? p.gwPoints ?? 0;
@@ -915,19 +997,16 @@ function renderCurrentGWCard() {
   const best = withLive[0];
   const worst = withLive[withLive.length - 1];
 
-  // Captain
   const cap = state.players.find(p => p.captain);
   const capLive = cap
     ? (liveDataCache[gw]?.[cap.fplId]?.stats?.total_points ?? cap.gwPoints ?? 0)
     : 0;
 
-  // Chip used
   const chipUsed = latest.active_chip || null;
   const chipLabel = chipUsed
     ? `${CHIP_EMOJI[chipUsed] || ''} ${CHIP_NAME[chipUsed] || chipUsed}`
     : '— no chip';
 
-  // Deadline countdown
   const deadline = state.nextDeadline ? new Date(state.nextDeadline) : null;
   let deadlineText = '—';
   if (deadline && deadline > new Date()) {
@@ -938,14 +1017,12 @@ function renderCurrentGWCard() {
     deadlineText = d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
 
-  // Transfers
   const transfers = latest.event_transfers || 0;
   const transferCost = latest.event_transfers_cost || 0;
   const transferLabel = transfers === 0
     ? 'No transfers'
     : `${transfers} transfer${transfers > 1 ? 's' : ''}${transferCost ? ` (-${transferCost} pts)` : ''}`;
 
-  // Status badge
   let statusBadge;
   if (isFinished) statusBadge = '<span class="current-gw-final-badge">Final</span>';
   else if (isLive) statusBadge = '<span class="current-gw-live-badge">● Live</span>';
@@ -1159,7 +1236,6 @@ function renderPitchView(container, planning) {
   const mid = starters.filter(p => p.pos === 'MID');
   const fwd = starters.filter(p => p.pos === 'FWD');
   const formation = `${def.length}-${mid.length}-${fwd.length}`;
-
   const capId = planning && plannedTeam ? plannedTeam.captain : (state.players.find(p => p.captain)?.id);
   const vcId = planning && plannedTeam ? plannedTeam.vice : (state.players.find(p => p.vice)?.id);
 
@@ -1175,9 +1251,8 @@ function renderPitchView(container, planning) {
     const injuryBadge = injury ? '<div class="pitch-badge-inj">⚠️</div>' : '';
     const numBadge = isBench && benchNum ? `<div class="pitch-badge-num">${benchNum}</div>` : '';
     const ptsClass = livePts > 2 ? '' : 'blank';
-    const onClick = `openActionModal('${p.id}')`;
     return `
-      <div class="pitch-card ${isCap ? 'captain' : ''} ${isVC ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="${onClick}">
+      <div class="pitch-card ${isCap ? 'captain' : ''} ${isVC ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="openActionModal('${p.id}')">
         ${badge}
         ${injuryBadge}
         ${numBadge}
@@ -1897,6 +1972,17 @@ function renderLeaderboard() {
   renderCaptainPicks().catch(e => console.warn('Captain picks failed', e));
 }
 
+/* ========== WEEKLY ROAST (WhatsApp-ready, per-member burns) ========== */
+
+function nicknameFor(id, isLast) {
+  if (isLast) {
+    const gw = state.currentGW || 1;
+    const idx = (gw + String(id).length) % SHAME_NICKNAMES.length;
+    return SHAME_NICKNAMES[idx];
+  }
+  return NICKNAMES[id] || null;
+}
+
 function renderWeeklyRoast() {
   const el = document.getElementById('weekly-roast');
   if (!el) return;
@@ -1906,16 +1992,148 @@ function renderWeeklyRoast() {
   }
   const lines = buildRoastLines();
   const currentGW = state.currentGW || '?';
-  const plainText = '🔥 WEEKLY ROAST — GW' + currentGW + '\n\n' +
-    lines.map(l => l.replace(/<[^>]*>/g, '')).join('\n') +
-    '\n\n— Sent from FPL Command Center';
+  const plainText = buildRoastText(lines, currentGW, 'full');
+  const shortText = buildRoastText(lines, currentGW, 'short');
+
   el.innerHTML = `
     <div class="roast-header-row">
       <div class="roast-title">🔥 WEEKLY ROAST — GW${currentGW}</div>
-      <button class="btn small roast-copy-btn" onclick="copyRoastText(${JSON.stringify(plainText).replace(/"/g, '&quot;')})">📋 Copy for WhatsApp</button>
+      <div class="roast-btn-row">
+        <button class="btn small roast-copy-btn" onclick="copyRoastText(${JSON.stringify(plainText).replace(/"/g, '&quot;')})">📋 Copy Full</button>
+        <button class="btn small roast-copy-btn" onclick="copyRoastText(${JSON.stringify(shortText).replace(/"/g, '&quot;')})">✂️ Copy Short</button>
+        <button class="btn small roast-copy-btn" onclick="shareRoast(${JSON.stringify(plainText).replace(/"/g, '&quot;')})">📤 Share</button>
+        <button class="btn small roast-copy-btn" onclick="openNicknamesModal()">✏️ Names</button>
+      </div>
     </div>
-    ${lines.map(l => `<div class="roast-line">${l}</div>`).join('')}
+    ${lines.map(l => `<div class="roast-line">${l.html}</div>`).join('')}
   `;
+}
+
+function buildRoastLines() {
+  const rows = state.familyData.map(m => {
+    const hist = m.history?.current || [];
+    const latest = hist[hist.length - 1];
+    return {
+      id: m.id,
+      rawName: m.name,
+      teamName: m.entry?.name || '',
+      totalPts: latest?.total_points || 0,
+      gwPts: latest?.points || 0,
+      overallRank: latest?.overall_rank || 0,
+      chip: latest?.active_chip || null,
+      transfers: latest?.event_transfers || 0,
+      transferCost: latest?.event_transfers_cost || 0,
+      avg: latest?.average_entry_score || 0,
+      mood: calcMood(m),
+    };
+  }).sort((a, b) => b.totalPts - a.totalPts);
+
+  if (!rows.length) return [{ html: 'Sync to load data.', plain: 'Sync to load data.' }];
+
+  const n = rows.length;
+  const leader = rows[0];
+  const last = rows[n - 1];
+  const gapTop = leader.totalPts - (rows[1]?.totalPts || 0);
+  const gapLast = leader.totalPts - last.totalPts;
+
+  rows.forEach((r, i) => {
+    const isLast = i === n - 1;
+    r.display = nicknameFor(r.id, isLast) || r.rawName;
+    r.isLast = isLast;
+  });
+
+  const L = [];
+  const push = (html, plain) => L.push({ html, plain });
+
+  // Header
+  push(
+    `👑 <strong>${escapeHtml(leader.display)}</strong> leads the family with <strong>${leader.totalPts} pts</strong> ${MOOD_EMOJI[leader.mood] || ''}`,
+    `👑 *${leader.display}* leads the family with *${leader.totalPts} pts* ${MOOD_EMOJI[leader.mood] || ''}`
+  );
+
+  if (gapTop === 0 && rows[1]) {
+    push(
+      `⚔️ Dead heat at the top with <strong>${escapeHtml(rows[1].display)}</strong>.`,
+      `⚔️ Tied at the top with *${rows[1].display}*.`
+    );
+  } else if (gapTop < 10 && rows[1]) {
+    push(
+      `🔥 Only <strong>${gapTop} pts</strong> between 1st and <strong>${escapeHtml(rows[1].display)}</strong>. Tense.`,
+      `🔥 Only *${gapTop} pts* between 1st and *${rows[1].display}*. Tense.`
+    );
+  } else if (rows[1]) {
+    push(
+      `📈 The gap at the top is <strong>${gapTop} pts</strong> over <strong>${escapeHtml(rows[1].display)}</strong>. Running away.`,
+      `📈 *${gapTop} pts* gap at the top over *${rows[1].display}*.`
+    );
+  }
+
+  // Divider + Roll call header
+  push(`━━━━━━━━━━━━━━━`, `━━━━━━━━━━━━━━━`);
+  push(`<strong>📋 THE ROLL CALL</strong>`, `*📋 THE ROLL CALL*`);
+
+  rows.forEach((r, i) => {
+    const rankEmoji = RANK_EMOJI[i] || `#${i + 1}`;
+    const moodE = MOOD_EMOJI[r.mood] || '';
+    const diff = r.gwPts - r.avg;
+    const diffStr = diff > 0 ? `+${diff} vs avg` : diff < 0 ? `${diff} vs avg` : `on avg`;
+    const transferStr = r.transfers
+      ? ` · ${r.transfers} transfer${r.transfers > 1 ? 's' : ''}${r.transferCost ? ` (-${r.transferCost} pts)` : ''}`
+      : '';
+    const chipStr = r.chip ? ` · ${CHIP_EMOJI[r.chip] || ''} ${CHIP_NAME[r.chip] || r.chip}` : '';
+
+    let burn;
+    if (i === 0) burn = randomQuote(BURN_LEADER);
+    else if (r.isLast) burn = randomQuote(BURN_LAST_EXTRA);
+    else if (i >= n - 2) burn = randomQuote(BURN_BOTTOM);
+    else burn = randomQuote(BURN_MID);
+
+    const nameDisplay = r.isLast
+      ? `${r.display} <em>(was ${escapeHtml(r.rawName)})</em>`
+      : r.display;
+
+    push(
+      `${rankEmoji} <strong>${escapeHtml(nameDisplay)}</strong> — <strong>${r.totalPts} pts</strong> total · <strong>${r.gwPts}</strong> this GW (${diffStr})${transferStr}${chipStr} ${moodE}<br><em>"${escapeHtml(burn)}"</em>`,
+      `${rankEmoji} *${escapeHtml(r.display)}*${r.isLast ? ` _(was ${r.rawName})_` : ''} — *${r.totalPts} pts* total · *${r.gwPts}* this GW (${diffStr})${transferStr}${chipStr} ${moodE}\n_"${burn}"_`
+    );
+  });
+
+  // Wooden Spoon section
+  push(`━━━━━━━━━━━━━━━`, `━━━━━━━━━━━━━━━`);
+  push(`<strong>🥄 THE WOODEN SPOON 🥄</strong>`, `*🥄 THE WOODEN SPOON 🥄*`);
+  push(
+    `🛍️ <strong>${escapeHtml(last.display)}</strong> (${escapeHtml(last.rawName)}) is <strong>DEAD LAST</strong> with <strong>${last.totalPts} pts</strong> — <strong>${gapLast} pts</strong> behind the leader.`,
+    `🛍️ *${escapeHtml(last.display)}* (${last.rawName}) is *DEAD LAST* with *${last.totalPts} pts* — *${gapLast} pts* behind the leader.`
+  );
+  push(
+    `💀 This week's damage: <strong>${last.gwPts} pts</strong>${last.chip ? ` using ${CHIP_NAME[last.chip] || last.chip}` : ''}. ${MOOD_EMOJI[last.mood] || ''}`,
+    `💀 This week's damage: *${last.gwPts} pts*${last.chip ? ` using ${CHIP_NAME[last.chip] || last.chip}` : ''}. ${MOOD_EMOJI[last.mood] || ''}`
+  );
+  push(
+    `<em>"${escapeHtml(randomQuote(BURN_LAST_EXTRA))}"</em>`,
+    `_"${randomQuote(BURN_LAST_EXTRA)}"_`
+  );
+
+  // Closer
+  push(
+    `<em>${escapeHtml(randomQuote(ROAST_WEEKLY))}</em>`,
+    `_${randomQuote(ROAST_WEEKLY)}_`
+  );
+
+  return L;
+}
+
+function buildRoastText(lines, gw, mode = 'full') {
+  const header = `🔥 *WEEKLY ROAST — GW${gw}* 🔥`;
+  const footer = `\n\n📊 _Sent from FPL Command Center_\n👉 Reply with your GW score to talk your talk.`;
+  if (mode === 'short') {
+    const leaderLine = lines[0]?.plain || '';
+    const lastLine = lines.find(l => l.plain.includes('DEAD LAST'))?.plain || '';
+    const short = [leaderLine, lastLine].filter(Boolean).join('\n');
+    return `${header}\n\n${short}${footer}`;
+  }
+  const body = lines.map(l => l.plain).join('\n');
+  return `${header}\n\n${body}${footer}`;
 }
 
 function copyRoastText(text) {
@@ -1935,29 +2153,50 @@ function copyRoastText(text) {
   );
 }
 
-function buildRoastLines() {
-  const rows = state.familyData.map(m => {
-    const hist = m.history?.current || [];
-    const latest = hist[hist.length - 1];
-    return { id: m.id, name: m.name, emoji: m.emoji, teamName: m.entry?.name || '', totalPts: latest?.total_points || 0, gwPts: latest?.points || 0 };
-  }).sort((a, b) => b.totalPts - a.totalPts);
-  if (!rows.length) return ['Sync to load data.'];
-  const leader = rows[0];
-  const last = rows[rows.length - 1];
-  const bestGW = [...rows].sort((a, b) => b.gwPts - a.gwPts)[0];
-  const worstGW = [...rows].sort((a, b) => a.gwPts - b.gwPts)[0];
-  const gap = leader.totalPts - (rows[1]?.totalPts || 0);
-  return [
-    `👑 <strong>${leader.emoji} ${leader.name}</strong> sits on top with <strong>${leader.totalPts} pts</strong>.`,
-    gap > 0 && gap < 10 ? `🔥 Only <strong>${gap} pts</strong> separate top from 2nd. Tense.` : '',
-    gap >= 10 ? `📈 The gap at the top is <strong>${gap} pts</strong>. ${leader.name.split(' ')[0]} is running away.` : '',
-    bestGW.gwPts > 0 ? `⚡ <strong>${bestGW.emoji} ${bestGW.name}</strong> top-scored this week with <strong>${bestGW.gwPts} pts</strong>.` : '',
-    worstGW.id !== bestGW.id ? `💀 <strong>${worstGW.emoji} ${worstGW.name}</strong> had a rough one — only <strong>${worstGW.gwPts} pts</strong>.` : '',
-    `🐌 <strong>${last.emoji} ${last.name}</strong> props up the table with <strong>${last.totalPts} pts</strong>.`,
-    `_ ${randomQuote(ROAST_WEEKLY)} _`,
-  ].filter(Boolean);
+function shareRoast(text) {
+  if (navigator.share) {
+    navigator.share({ title: 'FPL Weekly Roast', text }).catch(() => {});
+  } else {
+    copyRoastText(text);
+    toast('📤 Share not supported — copied instead');
+  }
 }
 
+/* ========== NICKNAMES MODAL ========== */
+function openNicknamesModal() {
+  nicknamesDraft = { ...NICKNAMES };
+  const form = document.getElementById('nicknames-form');
+  if (!form) return;
+  form.innerHTML = FAMILY.map(m => `
+    <div class="field">
+      <label>${m.emoji} ${escapeHtml(m.name)}</label>
+      <input type="text" data-id="${m.id}" value="${escapeHtml(nicknamesDraft[m.id] || m.name)}" maxlength="30">
+    </div>
+  `).join('');
+  document.getElementById('nicknames-modal').classList.add('active');
+}
+
+function saveNicknames() {
+  document.querySelectorAll('#nicknames-form input').forEach(inp => {
+    const id = inp.dataset.id;
+    NICKNAMES[id] = inp.value.trim() || FAMILY.find(f => f.id === id)?.name || id;
+  });
+  localStorage.setItem('fpl-cc-nicknames', JSON.stringify(NICKNAMES));
+  closeModal('nicknames-modal');
+  renderWeeklyRoast();
+  toast('✏️ Nicknames saved');
+}
+
+function resetNicknames() {
+  if (!confirm('Reset all nicknames to default?')) return;
+  NICKNAMES = { ...DEFAULT_NICKNAMES };
+  localStorage.removeItem('fpl-cc-nicknames');
+  openNicknamesModal();
+  renderWeeklyRoast();
+  toast('↺ Nicknames reset');
+}
+
+/* ========== LEADERBOARD SUB-RENDERERS ========== */
 function renderMainLeaderboard() {
   const card = document.getElementById('leaderboard-card');
   if (!card) return;
@@ -2141,8 +2380,9 @@ function renderGlance() {
   const best = [...rows].sort((a, b) => b.gwPts - a.gwPts)[0];
   const worst = [...rows].sort((a, b) => a.gwPts - b.gwPts)[0];
   const avg = Math.round(rows.reduce((s, r) => s + r.gwPts, 0) / rows.length);
-  const leader = [...rows].sort((a, b) => b.totalPts - a.totalPts)[0];
-  const gap = leader.totalPts - ([...rows].sort((a, b) => b.totalPts - a.totalPts)[1]?.totalPts || 0);
+  const sorted = [...rows].sort((a, b) => b.totalPts - a.totalPts);
+  const leader = sorted[0];
+  const gap = leader.totalPts - (sorted[1]?.totalPts || 0);
 
   const leaderQuote = gap < 10 ? `"${gap} pts separate top from 2nd. Tense."` : gap > 50 ? `"Running away with it. Boring."` : `"Still on top. Tick tock."`;
   const bestQuote = best.gwPts >= 70 ? `"${best.gwPts} pts! Someone bring the stretcher."` : best.gwPts >= 50 ? `"${best.gwPts} pts. Top of the week."` : `"Top score this week. Just."`;
@@ -2489,8 +2729,12 @@ function optimizeLineup() {
       if (pl) pl.order = pos++;
     });
   });
+  // FIX: bench GK must be first in bench order
+  const benchGK = bench.filter(b => b.pos === 'GK');
+  const benchOthers = bench.filter(b => b.pos !== 'GK');
+  const orderedBench = [...benchGK, ...benchOthers];
   let bp2 = 12;
-  bench.forEach(x => {
+  orderedBench.forEach(x => {
     const pl = state.players.find(pp2 => pp2.id === x.id);
     if (pl) pl.order = bp2++;
   });
@@ -2760,6 +3004,7 @@ window.addEventListener('DOMContentLoaded', () => {
   setInterval(updateSyncDot, 60000);
 });
 
+/* ========== EXPOSE GLOBALS ========== */
 window.syncAll = syncAll;
 window.toggleTheme = toggleTheme;
 window.switchView = switchView;
@@ -2811,6 +3056,11 @@ window.doSwap = doSwap;
 window.transferOutFromAction = transferOutFromAction;
 window.scrollToGW = scrollToGW;
 window.copyRoastText = copyRoastText;
+window.shareRoast = shareRoast;
+window.openNicknamesModal = openNicknamesModal;
+window.saveNicknames = saveNicknames;
+window.resetNicknames = resetNicknames;
+window.openNewsUrl = openNewsUrl;
 window.refreshNews = refreshNews;
 window.filterNews = filterNews;
 window.renderNews = renderNews;
