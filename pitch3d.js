@@ -1,6 +1,6 @@
 /* =========================================================
    FPL Command Center v13 — pitch3d.js
-   Voxel 3D pitch view (Three.js)
+   Voxel 3D pitch view (Three.js) - Fixed Camera & Rendering
    ========================================================= */
 
 import * as THREE from 'three';
@@ -148,17 +148,22 @@ function init3D(canvas) {
   if (renderer3d) dispose3D();
   scene3d = new THREE.Scene();
   scene3d.background = new THREE.Color(0x0d0221);
-  camera3d = new THREE.PerspectiveCamera(50, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
-  camera3d.position.set(0, 70, 65);
+  
+  // FIX: Better starting camera position
+  camera3d = new THREE.PerspectiveCamera(45, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+  camera3d.position.set(0, 90, 90); 
   camera3d.lookAt(0, 0, 0);
+
   renderer3d = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer3d.setSize(canvas.clientWidth, canvas.clientHeight);
   renderer3d.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.8);
   scene3d.add(ambient);
-  const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+  const sun = new THREE.DirectionalLight(0xffffff, 0.8);
   sun.position.set(30, 80, 40);
   scene3d.add(sun);
+
   controls3d = new OrbitControls(camera3d, canvas);
   controls3d.enableDamping = true;
   controls3d.dampingFactor = 0.08;
@@ -166,8 +171,10 @@ function init3D(canvas) {
   controls3d.maxDistance = 180;
   controls3d.maxPolarAngle = Math.PI / 2.1;
   controls3d.target.set(0, 0, 0);
+  
   controls3d.addEventListener('start', () => { isDragging = true; });
   controls3d.addEventListener('end',   () => { isDragging = false; });
+
   pitchGroup = new THREE.Group();
   pitchGroup.add(makePitch());
   scene3d.add(pitchGroup);
@@ -214,15 +221,21 @@ function loop3D() {
 window.renderSquad3D = function(canvasId, players, formation) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
+  
+  // FIX: Wait for the canvas to be properly sized before initializing
   if (!canvas.clientWidth || !canvas.clientHeight) {
     setTimeout(() => window.renderSquad3D(canvasId, players, formation), 100);
     return;
   }
-  if (currentCanvasId !== canvasId) {
+
+  // Only init if we haven't yet or if we switched views
+  if (!scene3d || currentCanvasId !== canvasId) {
     dispose3D();
     currentCanvasId = canvasId;
     init3D(canvas);
   }
+
+  // Clear existing players
   if (pitchGroup) {
     const toRemove = [];
     pitchGroup.children.forEach(child => {
@@ -239,8 +252,11 @@ window.renderSquad3D = function(canvasId, players, formation) {
       pitchGroup.remove(c);
     });
   }
+
+  // Add players to the pitch
   const byPos = { GK: [], DEF: [], MID: [], FWD: [] };
   players.forEach(p => { if (byPos[p.pos]) byPos[p.pos].push(p); });
+  
   Object.entries(byPos).forEach(([pos, list]) => {
     const z = zForPos(pos);
     list.forEach((player, i) => {
@@ -250,8 +266,10 @@ window.renderSquad3D = function(canvasId, players, formation) {
       pitchGroup.add(block);
     });
   });
+
   if (!animationId) loop3D();
   resize3D();
+  
   if (!window._pitch3dResizeBound) {
     window._pitch3dResizeBound = true;
     window.addEventListener('resize', resize3D);
