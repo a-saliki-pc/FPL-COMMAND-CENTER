@@ -15,16 +15,6 @@
 <link rel="stylesheet" href="style.css">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
-
-<!-- ===== 3D: Three.js import map (MUST be before pitch3d.js) ===== -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-  }
-}
-</script>
 </head>
 <body>
 
@@ -532,7 +522,7 @@
       <p style="margin-top:10px"><strong style="color:var(--text)">2. My Team tab</strong> — Pitch / List / <strong>3D</strong> view (cycle with the toggle button).</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">3. Planner tab</strong> — Current GW score at top, then plan the next GW below.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">4. News tab</strong> — live tweets from top FPL accounts in English, Arabic & Dutch.</p>
-      <p style="margin-top:10px"><strong style="color:var(--text)">5. League tab</strong> — Weekly Roast you can copy to WhatsApp, with funny nicknames per family member and a savage burn for last place. Tap <strong>✏️ Names</strong> to edit the nicknames.</p>
+      <p style="margin-top:10px"><strong style="color:var(--text)">5. League tab</strong> — Weekly Roast you can copy to WhatsApp. Tap <strong>✏️ Names</strong> to edit the nicknames.</p>
       <p style="margin-top:10px"><strong style="color:var(--text)">6. Player details</strong> — click any player to see full performance breakdown.</p>
     </div>
     <div class="modal-actions">
@@ -564,11 +554,12 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- ===== Your main app (unchanged) ===== -->
-<script src="app.js"></script>
+<!-- Load Three.js globally -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js"></script>
 
-<!-- ===== NEW: 3D module (loads after app.js) ===== -->
-<script type="module" src="pitch3d.js"></script>
+<!-- Main App -->
+<script src="app.js"></script>
 
 </body>
 </html>
