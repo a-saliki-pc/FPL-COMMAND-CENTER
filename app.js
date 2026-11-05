@@ -1,6 +1,6 @@
 /* =========================================================
    FPL Command Center v13 — app.js
-   Storage-Optimized · News Tab · Current GW Card · Roast System
+   Storage-Optimized · News Tab · Current GW Card · Roast · 3D
    ========================================================= */
 
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
@@ -16,7 +16,7 @@ const FAMILY = [
   { id: '6849321', name: 'Zakaria Said',   emoji: '😎' },
 ];
 
-/* ========== NICKNAMES (editable in-app via ✏️ Names) ========== */
+/* ========== NICKNAMES ========== */
 const DEFAULT_NICKNAMES = {
   '1115676': 'The Tactician 🧠',
   '3719511': 'The Rocket 🚀',
@@ -27,26 +27,10 @@ const DEFAULT_NICKNAMES = {
 let NICKNAMES = { ...DEFAULT_NICKNAMES };
 
 const SHAME_NICKNAMES = [
-  'Ciment Bag 🛍️',
-  'Backpack 🎒',
-  'The Waterboy 💧',
-  'Benchwarmer 🪑',
-  'The Wooden Spoon 🥄',
-  'Bin Bag 🗑️',
-  'The Mascot 🐔',
-  'Sticky Gloves 🧤',
-  'The Pylon 🚧',
-  'Discount Mbappé 🥴',
-  'The Ghost 👻',
-  'Concrete Boots 🥾',
-  'The Turnstile 🚪',
-  'Statue 🗿',
-  'Traffic Cone 🚧',
-  'The Cheerleader 📣',
-  'Ball Boy ⚽',
-  'The Understudy 🎭',
-  'The Intern 📎',
-  'Gym Pass Holder 🏋️',
+  'Ciment Bag 🛍️','Backpack 🎒','The Waterboy 💧','Benchwarmer 🪑','The Wooden Spoon 🥄',
+  'Bin Bag 🗑️','The Mascot 🐔','Sticky Gloves 🧤','The Pylon 🚧','Discount Mbappé 🥴',
+  'The Ghost 👻','Concrete Boots 🥾','The Turnstile 🚪','Statue 🗿','Traffic Cone 🚧',
+  'The Cheerleader 📣','Ball Boy ⚽','The Understudy 🎭','The Intern 📎','Gym Pass Holder 🏋️',
 ];
 
 const BURN_LEADER = [
@@ -107,7 +91,7 @@ const ROAST_BEST = ["Peaked early. Enjoy it while it lasts.", "Wildcard magic or
 const ROAST_WORST = ["Could have been worse. It wasn't much better.", "Even the bench outscored him this week.", "Sweating through a premium pick that blanked.", "Started the season in clown mode. Legendary.", "Died on the pitch. RIP his GW.", "Straight to the bin. Nothing saved.", "At least the app didn't crash. Silver linings.", "Someone check on him.", "The wooden spoon is calling.", "Trusted his gut. His gut was wrong. Again."];
 const ROAST_WEEKLY = ["Family group chat is going to be spicy this week.", "Somebody's getting roasted in the WhatsApp group.", "Rivalries intensifying. Popcorn ready.", "Nobody wants to be last. Yet here we are.", "Peak drama. Peak FPL. Peak family.", "Remember: it's just a game. (It's not.)", "Screenshots incoming. Defend yourselves."];
 
-/* Restore saved nicknames from localStorage */
+/* Restore saved nicknames */
 (function restoreNicknames() {
   try {
     const saved = JSON.parse(localStorage.getItem('fpl-cc-nicknames') || '{}');
@@ -121,7 +105,6 @@ const NITTER_INSTANCES = [
   'https://nitter.meowing.monster',
   'https://xcancel.com',
 ];
-
 const NEWS_ACCOUNTS = [
   { handle: 'OfficialFPL',     lang: 'en', flag: '🇬🇧', label: 'Fantasy Premier League' },
   { handle: 'FFScout',         lang: 'en', flag: '🇬🇧', label: 'Fantasy Football Scout' },
@@ -175,11 +158,7 @@ function loadFor(id) {
     const raw = localStorage.getItem(storageKey(id));
     if (raw) {
       const parsed = JSON.parse(raw);
-      return {
-        ...emptyState(),
-        ...parsed,
-        bootstrap: null, familyData: null, priceRisers: [], priceFallers: [],
-      };
+      return { ...emptyState(), ...parsed, bootstrap: null, familyData: null, priceRisers: [], priceFallers: [] };
     }
   } catch (e) { console.warn('Load failed, starting fresh', e); }
   return emptyState();
@@ -198,8 +177,7 @@ function saveState() {
   try {
     localStorage.setItem(storageKey(teamId), JSON.stringify(toSave));
   } catch (e) {
-    // FIX: don't wipe other teams' data — just warn and skip
-    console.warn('Storage full — skipping save (not wiping other teams)', e);
+    console.warn('Storage full — skipping save', e);
     toast('⚠️ Storage full — changes not saved', true);
   }
 }
@@ -212,7 +190,6 @@ function escapeHtml(s) {
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[c]));
 }
-// FIX: sanitize URLs before inserting into href/onclick
 function sanitizeUrl(u) {
   const s = String(u || '');
   if (/^https?:\/\//i.test(s)) return s;
@@ -282,20 +259,23 @@ function toggleTheme() {
   applyTheme(mode);
 })();
 
-/* ========== SQUAD VIEW TOGGLE ========== */
+/* ========== SQUAD VIEW TOGGLE (Pitch → List → 3D) ========== */
 function toggleSquadView() {
-  squadView = squadView === 'pitch' ? 'list' : 'pitch';
+  const order = ['pitch', 'list', '3d'];
+  const idx = order.indexOf(squadView);
+  squadView = order[(idx + 1) % order.length];
   localStorage.setItem('fpl-cc-squad-view', squadView);
   renderSquad();
   renderTeamView();
   updateViewToggleButtons();
-  toast(squadView === 'pitch' ? '⚽ Pitch view' : '📋 List view');
+  const labels = { pitch: '⚽ Pitch view', list: '📋 List view', '3d': '🎲 3D view' };
+  toast(labels[squadView] || squadView);
 }
 function updateViewToggleButtons() {
-  const label = squadView === 'pitch' ? '📋 List' : '⚽ Pitch';
+  const next = squadView === 'pitch' ? '📋 List' : squadView === 'list' ? '🎲 3D' : '⚽ Pitch';
   ['view-toggle-dashboard', 'view-toggle-team'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.textContent = label;
+    if (el) el.textContent = next;
   });
 }
 
@@ -502,9 +482,7 @@ function archiveOldPlans() {
   const current = state.currentGW || 1;
   const prevGW = state.lastKnownGW || 0;
   if (prevGW > 0 && prevGW < current) {
-    setTimeout(() => {
-      toast(`🗓 GW${prevGW} finished. Advanced to GW${current}. Check your plans!`);
-    }, 1500);
+    setTimeout(() => { toast(`🗓 GW${prevGW} finished. Advanced to GW${current}. Check your plans!`); }, 1500);
   }
   state.lastKnownGW = current;
   state.plans = state.plans.filter(p => {
@@ -545,7 +523,6 @@ function mergeMySquad(picksData) {
   const hist = picksData.entry_history;
   if (hist) {
     state.bank = (hist.bank || 0) / 10;
-    // FIX: use actual squad value when available (matches FPL header)
     state.budget = hist.value ? (hist.value / 10) : (state.bank + state.players.reduce((s, p) => s + p.price, 0));
   }
 }
@@ -618,6 +595,10 @@ document.addEventListener('visibilitychange', () => {
 
 /* ========== NAV ========== */
 function switchView(name, el) {
+  // ===== 3D ===== pause 3D rendering when leaving the 3D-able tabs
+  if (name !== 'dashboard' && name !== 'team' && typeof window.disposeSquad3D === 'function') {
+    window.disposeSquad3D();
+  }
   document.querySelectorAll('.main-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
   document.querySelectorAll('.view').forEach(v => v.style.display = 'none');
@@ -647,7 +628,6 @@ function startCountdown() {
   const wrap = document.getElementById('hdr-deadline-wrap');
   if (!el) return;
   function tick() {
-    // FIX: pause countdown when tab hidden (battery)
     if (document.visibilityState === 'hidden') return;
     let deadline = state?.nextDeadline;
     if (!deadline && state?.bootstrap?.events) {
@@ -751,16 +731,12 @@ async function refreshNews(showToastMsg = true) {
   const allTweets = [];
   try {
     const chunks = [];
-    for (let i = 0; i < NEWS_ACCOUNTS.length; i += 3) {
-      chunks.push(NEWS_ACCOUNTS.slice(i, i + 3));
-    }
+    for (let i = 0; i < NEWS_ACCOUNTS.length; i += 3) chunks.push(NEWS_ACCOUNTS.slice(i, i + 3));
     for (const chunk of chunks) {
       const results = await Promise.all(chunk.map(acc => fetchTweet(acc).catch(() => [])));
       results.forEach(r => allTweets.push(...r));
     }
-  } catch (e) {
-    console.error('News fetch error', e);
-  }
+  } catch (e) { console.error('News fetch error', e); }
   allTweets.sort((a, b) => {
     const aT = a.time ? new Date(a.time).getTime() : 0;
     const bT = b.time ? new Date(b.time).getTime() : 0;
@@ -780,9 +756,7 @@ function renderNews(showMessage = false) {
     if (!newsLoading) refreshNews(false);
     return;
   }
-  if (updated) {
-    updated.textContent = `Updated ${timeAgo(newsCache.lastFetch)} · ${newsCache.tweets.length} tweets`;
-  }
+  if (updated) updated.textContent = `Updated ${timeAgo(newsCache.lastFetch)} · ${newsCache.tweets.length} tweets`;
   let tweets = newsCache.tweets;
   if (newsCache.filter !== 'all') tweets = tweets.filter(t => t.lang === newsCache.filter);
   if (!tweets.length) {
@@ -791,19 +765,12 @@ function renderNews(showMessage = false) {
         <div style="font-size:2.5rem;margin-bottom:12px">😴</div>
         <div>No tweets available right now.</div>
         <div style="margin-top:8px;font-size:0.8rem">Nitter instances might be down. Try again in a few minutes.</div>
-      </div>
-    `;
+      </div>`;
     return;
   }
   grid.innerHTML = tweets.map(t => {
     const rtlAttr = t.lang === 'ar' ? 'dir="rtl"' : '';
-    const categoryLabel = {
-      injury: '🚨 Injury',
-      price: '💰 Price',
-      fixture: '📅 Fixture',
-      general: '⚡ FPL',
-    }[t.category];
-    // FIX: sanitize URL and use data-attribute + delegated click (no XSS)
+    const categoryLabel = { injury: '🚨 Injury', price: '💰 Price', fixture: '📅 Fixture', general: '⚡ FPL' }[t.category];
     const safeUrl = sanitizeUrl(t.url);
     return `
       <div class="news-card" data-lang="${t.lang}" data-url="${escapeHtml(safeUrl)}" onclick="openNewsUrl(this)">
@@ -820,11 +787,9 @@ function renderNews(showMessage = false) {
           <span class="news-category ${t.category}">${categoryLabel}</span>
           <span class="news-open-link">Open on X →</span>
         </div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 }
-// FIX: safe click handler for news cards
 function openNewsUrl(cardEl) {
   const url = cardEl?.getAttribute('data-url') || '#';
   if (url && url !== '#') window.open(url, '_blank', 'noopener');
@@ -857,14 +822,12 @@ function renderAll() {
   updateViewToggleButtons();
   updateTabBadges();
 }
-
 function updateTabBadges() {
   const teamTab = document.querySelector('[data-view="team"]');
   if (!teamTab) return;
   const planned = state.plannedTeams?.[state.nextGW] || state.plannedTeams?.[state.currentGW];
   teamTab.classList.toggle('has-plan', !!planned);
 }
-
 function renderHeader() {
   const squadValue = state.players.reduce((s, p) => s + Number(p.price || 0), 0);
   const mine = state.familyData?.find(f => f.id === teamId);
@@ -874,7 +837,6 @@ function renderHeader() {
   document.getElementById('hdr-points').textContent = latest?.total_points || '—';
   document.getElementById('hdr-rank').textContent = fmtRank(latest?.overall_rank || 0);
   document.getElementById('hdr-bank').textContent = fmt(state.bank);
-  // FIX: prefer actual squad value from FPL history
   document.getElementById('hdr-value').textContent = fmt(latest?.value ? latest.value / 10 : squadValue);
   document.getElementById('hdr-ft').textContent = state.freeTransfers;
 }
@@ -888,8 +850,7 @@ function renderGWGlanceBanner() {
   const latest = current[current.length - 1];
   const withLive = state.players.map(p => {
     const live = liveDataCache[state.currentGW]?.[p.fplId];
-    const pts = live?.stats?.total_points ?? p.gwPoints ?? 0;
-    return { name: p.name, pts };
+    return { name: p.name, pts: live?.stats?.total_points ?? p.gwPoints ?? 0 };
   });
   withLive.sort((a, b) => b.pts - a.pts);
   const best = withLive[0];
@@ -902,30 +863,10 @@ function renderGWGlanceBanner() {
   const capQuote = capPts ? (capPts.gwPoints >= 10 ? `"©️ delivered. Big brain move."` : capPts.gwPoints >= 4 ? `"©️ did OK."` : `"©️ blanked. Ouch."`) : '';
   el.innerHTML = `
     <div class="gw-glance-banner">
-      <div class="glance-stat">
-        <div class="label">This GW</div>
-        <div class="value good">${teamPts} pts</div>
-        <div class="sub">Rank ${fmtRank(latest.overall_rank)}</div>
-        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${teamQuote}</div>
-      </div>
-      <div class="glance-stat">
-        <div class="label">🔥 Best Player</div>
-        <div class="value good">${best ? best.pts : 0}</div>
-        <div class="sub">${best ? escapeHtml(best.name) : '—'}</div>
-        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${bestQuote}</div>
-      </div>
-      <div class="glance-stat">
-        <div class="label">💀 Worst Player</div>
-        <div class="value bad">${worst ? worst.pts : 0}</div>
-        <div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div>
-        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${worstQuote}</div>
-      </div>
-      <div class="glance-stat">
-        <div class="label">©️ Captain</div>
-        <div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div>
-        <div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div>
-        <div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${capQuote}</div>
-      </div>
+      <div class="glance-stat"><div class="label">This GW</div><div class="value good">${teamPts} pts</div><div class="sub">Rank ${fmtRank(latest.overall_rank)}</div><div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${teamQuote}</div></div>
+      <div class="glance-stat"><div class="label">🔥 Best Player</div><div class="value good">${best ? best.pts : 0}</div><div class="sub">${best ? escapeHtml(best.name) : '—'}</div><div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${bestQuote}</div></div>
+      <div class="glance-stat"><div class="label">💀 Worst Player</div><div class="value bad">${worst ? worst.pts : 0}</div><div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div><div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${worstQuote}</div></div>
+      <div class="glance-stat"><div class="label">©️ Captain</div><div class="value">${capPts ? capPts.gwPoints || 0 : '—'}</div><div class="sub">${capPts ? escapeHtml(capPts.name) : 'Not set'}</div><div style="font-size:0.68rem;font-style:italic;color:var(--muted);margin-top:6px;line-height:1.3">${capQuote}</div></div>
     </div>`;
 }
 
@@ -955,15 +896,10 @@ function renderStats() {
 function renderCurrentGWCard() {
   const el = document.getElementById('current-gw-card');
   if (!el) return;
-
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
   const latest = current[current.length - 1];
-
-  if (!latest) {
-    el.innerHTML = '<div class="empty" style="padding:20px"><span class="emoji">🔥</span>Sync to see this GW\'s score</div>';
-    return;
-  }
+  if (!latest) { el.innerHTML = '<div class="empty" style="padding:20px"><span class="emoji">🔥</span>Sync to see this GW\'s score</div>'; return; }
 
   const gw = state.currentGW || latest.event;
   const liveGW = state.bootstrap?.events?.find(e => e.id === gw);
@@ -973,40 +909,22 @@ function renderCurrentGWCard() {
   const prevGW = gw - 1;
   const prevHist = current.find(g => g.event === prevGW);
   const rankDelta = prevHist ? (prevHist.overall_rank - latest.overall_rank) : 0;
-  const rankArrow = rankDelta > 0
-    ? `▲ ${rankDelta.toLocaleString()}`
-    : rankDelta < 0
-      ? `▼ ${Math.abs(rankDelta).toLocaleString()}`
-      : '—';
+  const rankArrow = rankDelta > 0 ? `▲ ${rankDelta.toLocaleString()}` : rankDelta < 0 ? `▼ ${Math.abs(rankDelta).toLocaleString()}` : '—';
   const rankClass = rankDelta > 0 ? 'good' : rankDelta < 0 ? 'bad' : '';
-
   const avg = latest.average_entry_score || 0;
   const ptsDiff = (latest.points || 0) - avg;
-  const ptsDiffLabel = ptsDiff > 0
-    ? `+${ptsDiff} vs avg`
-    : ptsDiff < 0
-      ? `${ptsDiff} vs avg`
-      : 'On average';
+  const ptsDiffLabel = ptsDiff > 0 ? `+${ptsDiff} vs avg` : ptsDiff < 0 ? `${ptsDiff} vs avg` : 'On average';
   const ptsClass = ptsDiff > 0 ? 'good' : ptsDiff < 0 ? 'bad' : '';
-
   const withLive = state.players.map(p => {
     const live = liveDataCache[gw]?.[p.fplId];
-    const pts = live?.stats?.total_points ?? p.gwPoints ?? 0;
-    return { name: p.name, pts, pos: p.pos };
+    return { name: p.name, pts: live?.stats?.total_points ?? p.gwPoints ?? 0, pos: p.pos };
   }).sort((a, b) => b.pts - a.pts);
   const best = withLive[0];
   const worst = withLive[withLive.length - 1];
-
   const cap = state.players.find(p => p.captain);
-  const capLive = cap
-    ? (liveDataCache[gw]?.[cap.fplId]?.stats?.total_points ?? cap.gwPoints ?? 0)
-    : 0;
-
+  const capLive = cap ? (liveDataCache[gw]?.[cap.fplId]?.stats?.total_points ?? cap.gwPoints ?? 0) : 0;
   const chipUsed = latest.active_chip || null;
-  const chipLabel = chipUsed
-    ? `${CHIP_EMOJI[chipUsed] || ''} ${CHIP_NAME[chipUsed] || chipUsed}`
-    : '— no chip';
-
+  const chipLabel = chipUsed ? `${CHIP_EMOJI[chipUsed] || ''} ${CHIP_NAME[chipUsed] || chipUsed}` : '— no chip';
   const deadline = state.nextDeadline ? new Date(state.nextDeadline) : null;
   let deadlineText = '—';
   if (deadline && deadline > new Date()) {
@@ -1016,13 +934,9 @@ function renderCurrentGWCard() {
     const m = Math.floor((diff % 3600000) / 60000);
     deadlineText = d > 0 ? `${d}d ${h}h ${m}m` : h > 0 ? `${h}h ${m}m` : `${m}m`;
   }
-
   const transfers = latest.event_transfers || 0;
   const transferCost = latest.event_transfers_cost || 0;
-  const transferLabel = transfers === 0
-    ? 'No transfers'
-    : `${transfers} transfer${transfers > 1 ? 's' : ''}${transferCost ? ` (-${transferCost} pts)` : ''}`;
-
+  const transferLabel = transfers === 0 ? 'No transfers' : `${transfers} transfer${transfers > 1 ? 's' : ''}${transferCost ? ` (-${transferCost} pts)` : ''}`;
   let statusBadge;
   if (isFinished) statusBadge = '<span class="current-gw-final-badge">Final</span>';
   else if (isLive) statusBadge = '<span class="current-gw-live-badge">● Live</span>';
@@ -1031,44 +945,21 @@ function renderCurrentGWCard() {
   el.innerHTML = `
     <div class="current-gw-header">
       <div class="current-gw-title">GW${gw} ${statusBadge}</div>
-      <div style="font-size:0.75rem;color:var(--muted);font-weight:700">
-        ${deadlineText !== '—' && !isFinished ? `⏰ Deadline in ${deadlineText}` : ''}
-      </div>
+      <div style="font-size:0.75rem;color:var(--muted);font-weight:700">${deadlineText !== '—' && !isFinished ? `⏰ Deadline in ${deadlineText}` : ''}</div>
     </div>
     <div class="current-gw-stats">
-      <div class="current-gw-stat">
-        <div class="label">Points</div>
-        <div class="value good">${latest.points || 0}</div>
-        <div class="sub ${ptsClass}">${ptsDiffLabel}</div>
-      </div>
-      <div class="current-gw-stat">
-        <div class="label">Overall Rank</div>
-        <div class="value">${fmtRank(latest.overall_rank)}</div>
-        <div class="sub ${rankClass}">${rankArrow !== '—' ? rankArrow + ' this GW' : '—'}</div>
-      </div>
-      <div class="current-gw-stat">
-        <div class="label">🔥 Best Player</div>
-        <div class="value good">${best ? best.pts : 0}</div>
-        <div class="sub">${best ? escapeHtml(best.name) : '—'}</div>
-      </div>
-      <div class="current-gw-stat">
-        <div class="label">💀 Worst Player</div>
-        <div class="value bad">${worst ? worst.pts : 0}</div>
-        <div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div>
-      </div>
-      <div class="current-gw-stat">
-        <div class="label">©️ Captain</div>
-        <div class="value">${cap ? capLive : '—'}</div>
-        <div class="sub">${cap ? escapeHtml(cap.name) : 'Not set'}</div>
-      </div>
+      <div class="current-gw-stat"><div class="label">Points</div><div class="value good">${latest.points || 0}</div><div class="sub ${ptsClass}">${ptsDiffLabel}</div></div>
+      <div class="current-gw-stat"><div class="label">Overall Rank</div><div class="value">${fmtRank(latest.overall_rank)}</div><div class="sub ${rankClass}">${rankArrow !== '—' ? rankArrow + ' this GW' : '—'}</div></div>
+      <div class="current-gw-stat"><div class="label">🔥 Best Player</div><div class="value good">${best ? best.pts : 0}</div><div class="sub">${best ? escapeHtml(best.name) : '—'}</div></div>
+      <div class="current-gw-stat"><div class="label">💀 Worst Player</div><div class="value bad">${worst ? worst.pts : 0}</div><div class="sub">${worst ? escapeHtml(worst.name) : '—'}</div></div>
+      <div class="current-gw-stat"><div class="label">©️ Captain</div><div class="value">${cap ? capLive : '—'}</div><div class="sub">${cap ? escapeHtml(cap.name) : 'Not set'}</div></div>
     </div>
     <div class="current-gw-footer">
       <span>💸 <strong>${transferLabel}</strong></span>
       <span>🃏 <strong>${chipLabel}</strong></span>
       <span>💰 Bank <strong>${fmt((latest.bank || 0) / 10)}</strong></span>
       <span>📈 Value <strong>${fmt((latest.value || 0) / 10)}</strong></span>
-    </div>
-  `;
+    </div>`;
 }
 
 function renderCaptainSuggestion() {
@@ -1155,10 +1046,15 @@ function renderSquad() {
   const grid = document.getElementById('squad-grid');
   const dashPitch = document.getElementById('pitch-view-dashboard');
   if (!grid || !dashPitch) return;
+  // ===== 3D =====
   if (squadView === 'list') {
     grid.style.display = 'grid';
     dashPitch.style.display = 'none';
     renderSquadList(grid);
+  } else if (squadView === '3d') {
+    grid.style.display = 'none';
+    dashPitch.style.display = 'block';
+    renderPitch3D(dashPitch, false);
   } else {
     grid.style.display = 'none';
     dashPitch.style.display = 'block';
@@ -1181,7 +1077,6 @@ function renderSquadList(grid) {
       const form = el2 ? parseFloat(el2.form) || 0 : 0;
       return { ...p, score: form };
     }).sort((a, b) => b.score - a.score)[0];
-
   grid.innerHTML = sorted.map(p => {
     const isRecommendedCap = bestCap && p.id === bestCap.id;
     const teamBadge = p.teamId ? `${BADGE_BASE}/${p.teamId}.svg` : '';
@@ -1221,7 +1116,6 @@ function renderPitchView(container, planning) {
     container.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
     return;
   }
-
   let starters, bench;
   if (planning && plannedTeam) {
     starters = plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean);
@@ -1230,7 +1124,6 @@ function renderPitchView(container, planning) {
     starters = state.players.filter(p => !p.bench);
     bench = state.players.filter(p => p.bench);
   }
-
   const gk = starters.filter(p => p.pos === 'GK');
   const def = starters.filter(p => p.pos === 'DEF');
   const mid = starters.filter(p => p.pos === 'MID');
@@ -1238,7 +1131,6 @@ function renderPitchView(container, planning) {
   const formation = `${def.length}-${mid.length}-${fwd.length}`;
   const capId = planning && plannedTeam ? plannedTeam.captain : (state.players.find(p => p.captain)?.id);
   const vcId = planning && plannedTeam ? plannedTeam.vice : (state.players.find(p => p.vice)?.id);
-
   const renderPlayerCard = (p, isBench, benchNum) => {
     const live = liveDataCache[state.currentGW]?.[p.fplId];
     const livePts = live?.stats?.total_points ?? p.gwPoints ?? 0;
@@ -1253,15 +1145,12 @@ function renderPitchView(container, planning) {
     const ptsClass = livePts > 2 ? '' : 'blank';
     return `
       <div class="pitch-card ${isCap ? 'captain' : ''} ${isVC ? 'vice' : ''} ${injury ? 'injured' : ''} ${isBench ? 'bench' : ''}" onclick="openActionModal('${p.id}')">
-        ${badge}
-        ${injuryBadge}
-        ${numBadge}
+        ${badge}${injuryBadge}${numBadge}
         ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
         <div class="pitch-name">${escapeHtml(p.name.split(' ').slice(-1)[0])}</div>
         <div class="pitch-pts ${ptsClass}">${livePts}</div>
       </div>`;
   };
-
   const html = `
     <div class="pitch-formation">${formation} · GW${planning && planningGW ? planningGW : (state.currentGW || '?')}${planning ? ' · PLANNING' : ''}</div>
     <div class="pitch-row fwd">${fwd.map(p => renderPlayerCard(p, false)).join('')}</div>
@@ -1276,6 +1165,37 @@ function renderPitchView(container, planning) {
   container.innerHTML = html;
 }
 
+/* ========== 3D PITCH VIEW (NEW) ========== */
+function renderPitch3D(container, planning) {
+  if (!state.players.length) {
+    container.innerHTML = '<div class="empty"><span class="emoji">🎲</span>Sync to load your 3D pitch</div>';
+    return;
+  }
+  container.innerHTML = `
+    <div class="pitch-3d-wrap">
+      <canvas id="pitch-3d-canvas"></canvas>
+      <div class="pitch-3d-hint">🖱️ Drag to orbit · Scroll / pinch to zoom</div>
+    </div>
+  `;
+  requestAnimationFrame(() => {
+    const players = planning && plannedTeam
+      ? plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean)
+      : state.players.filter(p => !p.bench);
+    if (typeof window.renderSquad3D === 'function') {
+      window.renderSquad3D('pitch-3d-canvas', players, '');
+    } else {
+      // pitch3d.js not loaded yet — retry
+      setTimeout(() => {
+        if (typeof window.renderSquad3D === 'function') {
+          window.renderSquad3D('pitch-3d-canvas', players, '');
+        } else {
+          container.innerHTML = '<div class="empty"><span class="emoji">⏳</span>3D engine is loading… If this persists, check the console.</div>';
+        }
+      }, 600);
+    }
+  });
+}
+
 /* ========== TEAM VIEW ========== */
 function renderTeamView() {
   const pitch = document.getElementById('pitch-view-team');
@@ -1283,9 +1203,7 @@ function renderTeamView() {
   const planBanner = document.getElementById('planning-banner');
   const planCompare = document.getElementById('plan-compare');
   const planBtn = document.getElementById('plan-next-gw-btn');
-
   if (!pitch) return;
-
   if (planningMode && planBanner) {
     planBanner.style.display = 'block';
     document.getElementById('planning-gw').textContent = planningGW;
@@ -1294,23 +1212,19 @@ function renderTeamView() {
     planBanner.style.display = 'none';
     document.body.classList.remove('planning-active');
   }
-
   if (!state.players.length) {
     pitch.innerHTML = '<div class="empty"><span class="emoji">⚽</span>Sync to load your pitch</div>';
     if (banner) banner.innerHTML = '';
     if (planCompare) planCompare.style.display = 'none';
     return;
   }
-
   const mine = state.familyData?.find(f => f.id === teamId);
   const current = mine?.history?.current || [];
   const latest = current[current.length - 1];
-
   const useTeam = planningMode && plannedTeam;
   const starters = useTeam
     ? plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean)
     : state.players.filter(p => !p.bench);
-
   const defCount = starters.filter(p => p.pos === 'DEF').length;
   const midCount = starters.filter(p => p.pos === 'MID').length;
   const fwdCount = starters.filter(p => p.pos === 'FWD').length;
@@ -1319,44 +1233,28 @@ function renderTeamView() {
   const vcId = useTeam ? plannedTeam.vice : state.players.find(p => p.vice)?.id;
   const cap = state.players.find(p => p.id === capId);
   const vc = state.players.find(p => p.id === vcId);
-
   if (banner) {
     banner.innerHTML = `
-      <div class="team-summary-item">
-        <div class="label">${planningMode ? 'Planning' : 'This GW'}</div>
-        <div class="value">${planningMode ? 'GW' + planningGW : (latest?.points || 0) + ' pts'}</div>
-        <div class="sub">${planningMode ? 'Draft team' : (latest ? 'Rank ' + fmtRank(latest.overall_rank) : '—')}</div>
-      </div>
-      <div class="team-summary-item">
-        <div class="label">Formation</div>
-        <div class="value">${formation}</div>
-        <div class="sub">${starters.length} starters</div>
-      </div>
-      <div class="team-summary-item">
-        <div class="label">©️ Captain</div>
-        <div class="value">${cap ? escapeHtml(cap.name.split(' ').slice(-1)[0]) : '—'}</div>
-        <div class="sub">${cap ? fmt(cap.price) : 'Not set'}</div>
-      </div>
-      <div class="team-summary-item">
-        <div class="label">🎗️ Vice</div>
-        <div class="value">${vc ? escapeHtml(vc.name.split(' ').slice(-1)[0]) : '—'}</div>
-        <div class="sub">${vc ? fmt(vc.price) : 'Not set'}</div>
-      </div>
+      <div class="team-summary-item"><div class="label">${planningMode ? 'Planning' : 'This GW'}</div><div class="value">${planningMode ? 'GW' + planningGW : (latest?.points || 0) + ' pts'}</div><div class="sub">${planningMode ? 'Draft team' : (latest ? 'Rank ' + fmtRank(latest.overall_rank) : '—')}</div></div>
+      <div class="team-summary-item"><div class="label">Formation</div><div class="value">${formation}</div><div class="sub">${starters.length} starters</div></div>
+      <div class="team-summary-item"><div class="label">©️ Captain</div><div class="value">${cap ? escapeHtml(cap.name.split(' ').slice(-1)[0]) : '—'}</div><div class="sub">${cap ? fmt(cap.price) : 'Not set'}</div></div>
+      <div class="team-summary-item"><div class="label">🎗️ Vice</div><div class="value">${vc ? escapeHtml(vc.name.split(' ').slice(-1)[0]) : '—'}</div><div class="sub">${vc ? fmt(vc.price) : 'Not set'}</div></div>
     `;
   }
-
-  renderPitchView(pitch, planningMode);
-
+  // ===== 3D ===== render 3D or 2D based on current mode
+  if (squadView === '3d') {
+    renderPitch3D(pitch, planningMode);
+  } else {
+    renderPitchView(pitch, planningMode);
+  }
   if (planBtn) {
-    if (planningMode) {
-      planBtn.style.display = 'none';
-    } else {
+    if (planningMode) planBtn.style.display = 'none';
+    else {
       planBtn.style.display = 'inline-flex';
       const nextGW = state.nextGW || state.currentGW + 1;
       planBtn.textContent = `🗓 Plan GW${nextGW}`;
     }
   }
-
   if (planCompare) {
     const nextGW = state.nextGW || state.currentGW + 1;
     const savedPlan = state.plannedTeams?.[nextGW];
@@ -1402,17 +1300,8 @@ function renderPlanCompare(gw, plan) {
     return;
   }
   el.innerHTML = `
-    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">
-      Saved plan for GW${gw} — ${changes.length} change${changes.length !== 1 ? 's' : ''}
-    </div>
-    ${changes.map(c => `
-      <div class="plan-compare-row">
-        <span class="label">${c.label}</span>
-        <span class="from">${escapeHtml(c.from)}</span>
-        <span class="arrow">→</span>
-        <span class="to">${escapeHtml(c.to)}</span>
-      </div>
-    `).join('')}
+    <div style="font-size:0.8rem;color:var(--muted);margin-bottom:10px">Saved plan for GW${gw} — ${changes.length} change${changes.length !== 1 ? 's' : ''}</div>
+    ${changes.map(c => `<div class="plan-compare-row"><span class="label">${c.label}</span><span class="from">${escapeHtml(c.from)}</span><span class="arrow">→</span><span class="to">${escapeHtml(c.to)}</span></div>`).join('')}
     <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn small primary" onclick="enterPlanningMode()">✏️ Edit Plan</button>
       <button class="btn small danger" onclick="deletePlannedTeam(${gw})">🗑 Delete Plan</button>
@@ -1440,7 +1329,6 @@ function enterPlanningMode() {
   renderTeamView();
   toast(`🗓 Planning mode — GW${nextGW}`);
 }
-
 function exitPlanningMode() {
   if (plannedTeam) {
     const changed = JSON.stringify(plannedTeam) !== JSON.stringify({
@@ -1451,12 +1339,9 @@ function exitPlanningMode() {
     });
     if (changed && !confirm('Discard changes to your planned team?')) return;
   }
-  planningMode = false;
-  plannedTeam = null;
-  planningGW = null;
+  planningMode = false; plannedTeam = null; planningGW = null;
   renderTeamView();
 }
-
 function resetPlanningToCurrent() {
   if (!confirm('Reset plan to your current team?')) return;
   plannedTeam = {
@@ -1468,27 +1353,20 @@ function resetPlanningToCurrent() {
   renderTeamView();
   toast('↺ Reset to current team');
 }
-
 function savePlannedTeam() {
   if (!planningMode || !plannedTeam || !planningGW) return;
   if (!state.plannedTeams) state.plannedTeams = {};
   state.plannedTeams[planningGW] = { ...plannedTeam };
-  saveState();
-  updateTabBadges();
+  saveState(); updateTabBadges();
   toast(`💾 Saved plan for GW${planningGW}`);
-  planningMode = false;
-  plannedTeam = null;
-  planningGW = null;
+  planningMode = false; plannedTeam = null; planningGW = null;
   renderTeamView();
 }
-
 function deletePlannedTeam(gw) {
   if (!confirm(`Delete your plan for GW${gw}?`)) return;
   if (state.plannedTeams) {
     delete state.plannedTeams[gw];
-    saveState();
-    updateTabBadges();
-    renderTeamView();
+    saveState(); updateTabBadges(); renderTeamView();
     toast('Plan deleted');
   }
 }
@@ -1516,8 +1394,7 @@ function openActionModal(playerId) {
   const previewBanner = !inPlanning ? `
     <div style="background:rgba(4,245,255,0.1);border:1px solid rgba(4,245,255,0.3);border-radius:10px;padding:12px 14px;font-size:0.78rem;color:var(--cyan);margin-bottom:14px;line-height:1.5">
       💡 <strong>Preview mode</strong> — changes here don't affect your real team. To save a plan, click <strong>🗓 Plan Next GW</strong>.
-    </div>
-  ` : '';
+    </div>` : '';
   content.innerHTML = `
     ${previewBanner}
     <div class="action-player-info">
@@ -1538,14 +1415,12 @@ function openActionModal(playerId) {
   `;
   document.getElementById('action-modal').classList.add('active');
 }
-
 function setCaptainFromAction(playerId) {
   if (!planningMode) { toast('Enable Planning Mode to make changes', true); closeModal('action-modal'); return; }
   if (!plannedTeam) return;
   plannedTeam.captain = playerId;
   if (playerId && plannedTeam.vice === playerId) plannedTeam.vice = null;
-  closeModal('action-modal');
-  renderTeamView();
+  closeModal('action-modal'); renderTeamView();
   toast(playerId ? '👑 Captain set' : '👑 Captain removed');
 }
 function setViceFromAction(playerId) {
@@ -1553,8 +1428,7 @@ function setViceFromAction(playerId) {
   if (!plannedTeam) return;
   plannedTeam.vice = playerId;
   if (playerId && plannedTeam.captain === playerId) plannedTeam.captain = null;
-  closeModal('action-modal');
-  renderTeamView();
+  closeModal('action-modal'); renderTeamView();
   toast('🎗️ Vice set');
 }
 function moveToBench(playerId) {
@@ -1572,8 +1446,7 @@ function moveToBench(playerId) {
   plannedTeam.bench[swapIdx] = playerId;
   if (plannedTeam.captain === playerId) plannedTeam.captain = null;
   if (plannedTeam.vice === playerId) plannedTeam.vice = null;
-  closeModal('action-modal');
-  renderTeamView();
+  closeModal('action-modal'); renderTeamView();
   toast('⬇️ Moved to bench');
 }
 function moveToStarters(playerId) {
@@ -1590,8 +1463,7 @@ function moveToStarters(playerId) {
   plannedTeam.starters[targetIdx] = playerId;
   if (plannedTeam.captain === target) plannedTeam.captain = null;
   if (plannedTeam.vice === target) plannedTeam.vice = null;
-  closeModal('action-modal');
-  renderTeamView();
+  closeModal('action-modal'); renderTeamView();
   toast('⬆️ Moved to starting XI');
 }
 function openSwapModal(playerId) {
@@ -1668,17 +1540,14 @@ function doSwap(targetId) {
   }
   if (plannedTeam.bench.includes(plannedTeam.captain)) plannedTeam.captain = null;
   if (plannedTeam.bench.includes(plannedTeam.vice)) plannedTeam.vice = null;
-  closeModal('swap-modal');
-  closeModal('action-modal');
-  renderTeamView();
+  closeModal('swap-modal'); closeModal('action-modal'); renderTeamView();
   toast('🔄 Swapped');
 }
 function transferOutFromAction(playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
   closeModal('action-modal');
-  planningMode = false;
-  plannedTeam = null;
+  planningMode = false; plannedTeam = null;
   renderTeamView();
   openPlanModal(null, state.nextGW || state.currentGW + 1);
   setTimeout(() => {
@@ -1772,7 +1641,6 @@ function renderSeasonPlanner(retryCount = 0) {
 
   const current = state.currentGW;
   if (openAccordions[current] === undefined) openAccordions[current] = true;
-
   let html = `
     <div class="planner-focus-banner">
       <div class="focus-left">
@@ -1785,7 +1653,6 @@ function renderSeasonPlanner(retryCount = 0) {
       </div>
     </div>
   `;
-
   for (let gw = 1; gw <= 38; gw++) {
     const status = getGWStatus(gw);
     const plan = state.plans.find(p => p.gw === gw);
@@ -1798,17 +1665,11 @@ function renderSeasonPlanner(retryCount = 0) {
       <div class="gw-accordion ${status} ${isOpen ? 'open' : ''}" data-gw="${gw}" id="gw-accordion-${gw}">
         <div class="gw-accordion-header" onclick="toggleAccordion(${gw})">
           <div class="gw-acc-gwnum">GW${gw}</div>
-          <div class="gw-acc-summary">
-            ${pastSummary}
-            ${summaryParts}
-            <span class="gw-acc-status ${status}">${statusLabel}</span>
-          </div>
+          <div class="gw-acc-summary">${pastSummary}${summaryParts}<span class="gw-acc-status ${status}">${statusLabel}</span></div>
           <div class="gw-acc-chevron">▼</div>
         </div>
         <div class="gw-accordion-body">
-          <div class="gw-accordion-body-inner" id="gw-body-${gw}">
-            ${renderGWAccordionBody(gw, plan, status)}
-          </div>
+          <div class="gw-accordion-body-inner" id="gw-body-${gw}">${renderGWAccordionBody(gw, plan, status)}</div>
         </div>
       </div>`;
   }
@@ -1822,7 +1683,6 @@ function renderSeasonPlanner(retryCount = 0) {
     }
   }
 }
-
 function scrollToGW(gw, smooth = true) {
   const el = document.getElementById('gw-accordion-' + gw);
   if (!el) return;
@@ -1831,7 +1691,6 @@ function scrollToGW(gw, smooth = true) {
   el.style.boxShadow = '0 0 30px rgba(4,245,255,0.6)';
   setTimeout(() => { el.style.boxShadow = ''; }, 1500);
 }
-
 async function updateGWPastSummary(gw, result) {
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"] .gw-accordion-header`);
   if (!el) return;
@@ -1848,7 +1707,6 @@ async function updateGWPastSummary(gw, result) {
     if (bodyEl) bodyEl.innerHTML = renderGWAccordionBody(gw, state.plans.find(p => p.gw === gw), 'past');
   }
 }
-
 function renderGWAccordionBody(gw, plan, status) {
   const isPast = status === 'past';
   const result = gwResultCache[gw];
@@ -1895,7 +1753,6 @@ function renderGWAccordionBody(gw, plan, status) {
   </div>`;
   return planHtml + fixturesHtml + actionsHtml;
 }
-
 function renderPastGWBody(gw, plan, result) {
   const pred = plan ? `<div class="gw-compare-col predicted">
     <h5>📋 You Planned</h5>
@@ -1917,7 +1774,6 @@ function renderPastGWBody(gw, plan, result) {
   </div>` : `<div class="gw-compare-col actual"><h5>✅ Actual Result</h5><div style="color:var(--muted);font-size:0.75rem;font-style:italic">Loading...</div></div>`;
   return `<div class="gw-compare">${pred}${actual}</div>`;
 }
-
 function toggleAccordion(gw) {
   openAccordions[gw] = !openAccordions[gw];
   const el = document.querySelector(`.gw-accordion[data-gw="${gw}"]`);
@@ -1972,8 +1828,7 @@ function renderLeaderboard() {
   renderCaptainPicks().catch(e => console.warn('Captain picks failed', e));
 }
 
-/* ========== WEEKLY ROAST (WhatsApp-ready, per-member burns) ========== */
-
+/* ========== WEEKLY ROAST ========== */
 function nicknameFor(id, isLast) {
   if (isLast) {
     const gw = state.currentGW || 1;
@@ -1982,7 +1837,6 @@ function nicknameFor(id, isLast) {
   }
   return NICKNAMES[id] || null;
 }
-
 function renderWeeklyRoast() {
   const el = document.getElementById('weekly-roast');
   if (!el) return;
@@ -1994,7 +1848,6 @@ function renderWeeklyRoast() {
   const currentGW = state.currentGW || '?';
   const plainText = buildRoastText(lines, currentGW, 'full');
   const shortText = buildRoastText(lines, currentGW, 'short');
-
   el.innerHTML = `
     <div class="roast-header-row">
       <div class="roast-title">🔥 WEEKLY ROAST — GW${currentGW}</div>
@@ -2008,15 +1861,12 @@ function renderWeeklyRoast() {
     ${lines.map(l => `<div class="roast-line">${l.html}</div>`).join('')}
   `;
 }
-
 function buildRoastLines() {
   const rows = state.familyData.map(m => {
     const hist = m.history?.current || [];
     const latest = hist[hist.length - 1];
     return {
-      id: m.id,
-      rawName: m.name,
-      teamName: m.entry?.name || '',
+      id: m.id, rawName: m.name, teamName: m.entry?.name || '',
       totalPts: latest?.total_points || 0,
       gwPts: latest?.points || 0,
       overallRank: latest?.overall_rank || 0,
@@ -2027,78 +1877,49 @@ function buildRoastLines() {
       mood: calcMood(m),
     };
   }).sort((a, b) => b.totalPts - a.totalPts);
-
   if (!rows.length) return [{ html: 'Sync to load data.', plain: 'Sync to load data.' }];
-
   const n = rows.length;
   const leader = rows[0];
   const last = rows[n - 1];
   const gapTop = leader.totalPts - (rows[1]?.totalPts || 0);
   const gapLast = leader.totalPts - last.totalPts;
-
   rows.forEach((r, i) => {
     const isLast = i === n - 1;
     r.display = nicknameFor(r.id, isLast) || r.rawName;
     r.isLast = isLast;
   });
-
   const L = [];
   const push = (html, plain) => L.push({ html, plain });
-
-  // Header
   push(
     `👑 <strong>${escapeHtml(leader.display)}</strong> leads the family with <strong>${leader.totalPts} pts</strong> ${MOOD_EMOJI[leader.mood] || ''}`,
     `👑 *${leader.display}* leads the family with *${leader.totalPts} pts* ${MOOD_EMOJI[leader.mood] || ''}`
   );
-
   if (gapTop === 0 && rows[1]) {
-    push(
-      `⚔️ Dead heat at the top with <strong>${escapeHtml(rows[1].display)}</strong>.`,
-      `⚔️ Tied at the top with *${rows[1].display}*.`
-    );
+    push(`⚔️ Dead heat at the top with <strong>${escapeHtml(rows[1].display)}</strong>.`, `⚔️ Tied at the top with *${rows[1].display}*.`);
   } else if (gapTop < 10 && rows[1]) {
-    push(
-      `🔥 Only <strong>${gapTop} pts</strong> between 1st and <strong>${escapeHtml(rows[1].display)}</strong>. Tense.`,
-      `🔥 Only *${gapTop} pts* between 1st and *${rows[1].display}*. Tense.`
-    );
+    push(`🔥 Only <strong>${gapTop} pts</strong> between 1st and <strong>${escapeHtml(rows[1].display)}</strong>. Tense.`, `🔥 Only *${gapTop} pts* between 1st and *${rows[1].display}*. Tense.`);
   } else if (rows[1]) {
-    push(
-      `📈 The gap at the top is <strong>${gapTop} pts</strong> over <strong>${escapeHtml(rows[1].display)}</strong>. Running away.`,
-      `📈 *${gapTop} pts* gap at the top over *${rows[1].display}*.`
-    );
+    push(`📈 The gap at the top is <strong>${gapTop} pts</strong> over <strong>${escapeHtml(rows[1].display)}</strong>. Running away.`, `📈 *${gapTop} pts* gap at the top over *${rows[1].display}*.`);
   }
-
-  // Divider + Roll call header
   push(`━━━━━━━━━━━━━━━`, `━━━━━━━━━━━━━━━`);
   push(`<strong>📋 THE ROLL CALL</strong>`, `*📋 THE ROLL CALL*`);
-
   rows.forEach((r, i) => {
     const rankEmoji = RANK_EMOJI[i] || `#${i + 1}`;
     const moodE = MOOD_EMOJI[r.mood] || '';
     const diff = r.gwPts - r.avg;
     const diffStr = diff > 0 ? `+${diff} vs avg` : diff < 0 ? `${diff} vs avg` : `on avg`;
-    const transferStr = r.transfers
-      ? ` · ${r.transfers} transfer${r.transfers > 1 ? 's' : ''}${r.transferCost ? ` (-${r.transferCost} pts)` : ''}`
-      : '';
+    const transferStr = r.transfers ? ` · ${r.transfers} transfer${r.transfers > 1 ? 's' : ''}${r.transferCost ? ` (-${r.transferCost} pts)` : ''}` : '';
     const chipStr = r.chip ? ` · ${CHIP_EMOJI[r.chip] || ''} ${CHIP_NAME[r.chip] || r.chip}` : '';
-
     let burn;
     if (i === 0) burn = randomQuote(BURN_LEADER);
     else if (r.isLast) burn = randomQuote(BURN_LAST_EXTRA);
     else if (i >= n - 2) burn = randomQuote(BURN_BOTTOM);
     else burn = randomQuote(BURN_MID);
-
-    const nameDisplay = r.isLast
-      ? `${r.display} <em>(was ${escapeHtml(r.rawName)})</em>`
-      : r.display;
-
     push(
-      `${rankEmoji} <strong>${escapeHtml(nameDisplay)}</strong> — <strong>${r.totalPts} pts</strong> total · <strong>${r.gwPts}</strong> this GW (${diffStr})${transferStr}${chipStr} ${moodE}<br><em>"${escapeHtml(burn)}"</em>`,
+      `${rankEmoji} <strong>${escapeHtml(r.display)}</strong>${r.isLast ? ` <em>(was ${escapeHtml(r.rawName)})</em>` : ''} — <strong>${r.totalPts} pts</strong> total · <strong>${r.gwPts}</strong> this GW (${diffStr})${transferStr}${chipStr} ${moodE}<br><em>"${escapeHtml(burn)}"</em>`,
       `${rankEmoji} *${escapeHtml(r.display)}*${r.isLast ? ` _(was ${r.rawName})_` : ''} — *${r.totalPts} pts* total · *${r.gwPts}* this GW (${diffStr})${transferStr}${chipStr} ${moodE}\n_"${burn}"_`
     );
   });
-
-  // Wooden Spoon section
   push(`━━━━━━━━━━━━━━━`, `━━━━━━━━━━━━━━━`);
   push(`<strong>🥄 THE WOODEN SPOON 🥄</strong>`, `*🥄 THE WOODEN SPOON 🥄*`);
   push(
@@ -2109,20 +1930,10 @@ function buildRoastLines() {
     `💀 This week's damage: <strong>${last.gwPts} pts</strong>${last.chip ? ` using ${CHIP_NAME[last.chip] || last.chip}` : ''}. ${MOOD_EMOJI[last.mood] || ''}`,
     `💀 This week's damage: *${last.gwPts} pts*${last.chip ? ` using ${CHIP_NAME[last.chip] || last.chip}` : ''}. ${MOOD_EMOJI[last.mood] || ''}`
   );
-  push(
-    `<em>"${escapeHtml(randomQuote(BURN_LAST_EXTRA))}"</em>`,
-    `_"${randomQuote(BURN_LAST_EXTRA)}"_`
-  );
-
-  // Closer
-  push(
-    `<em>${escapeHtml(randomQuote(ROAST_WEEKLY))}</em>`,
-    `_${randomQuote(ROAST_WEEKLY)}_`
-  );
-
+  push(`<em>"${escapeHtml(randomQuote(BURN_LAST_EXTRA))}"</em>`, `_"${randomQuote(BURN_LAST_EXTRA)}"_`);
+  push(`<em>${escapeHtml(randomQuote(ROAST_WEEKLY))}</em>`, `_${randomQuote(ROAST_WEEKLY)}_`);
   return L;
 }
-
 function buildRoastText(lines, gw, mode = 'full') {
   const header = `🔥 *WEEKLY ROAST — GW${gw}* 🔥`;
   const footer = `\n\n📊 _Sent from FPL Command Center_\n👉 Reply with your GW score to talk your talk.`;
@@ -2135,7 +1946,6 @@ function buildRoastText(lines, gw, mode = 'full') {
   const body = lines.map(l => l.plain).join('\n');
   return `${header}\n\n${body}${footer}`;
 }
-
 function copyRoastText(text) {
   navigator.clipboard.writeText(text).then(
     () => toast('✅ Roast copied — paste it in WhatsApp!'),
@@ -2152,7 +1962,6 @@ function copyRoastText(text) {
     }
   );
 }
-
 function shareRoast(text) {
   if (navigator.share) {
     navigator.share({ title: 'FPL Weekly Roast', text }).catch(() => {});
@@ -2175,7 +1984,6 @@ function openNicknamesModal() {
   `).join('');
   document.getElementById('nicknames-modal').classList.add('active');
 }
-
 function saveNicknames() {
   document.querySelectorAll('#nicknames-form input').forEach(inp => {
     const id = inp.dataset.id;
@@ -2186,7 +1994,6 @@ function saveNicknames() {
   renderWeeklyRoast();
   toast('✏️ Nicknames saved');
 }
-
 function resetNicknames() {
   if (!confirm('Reset all nicknames to default?')) return;
   NICKNAMES = { ...DEFAULT_NICKNAMES };
@@ -2383,37 +2190,15 @@ function renderGlance() {
   const sorted = [...rows].sort((a, b) => b.totalPts - a.totalPts);
   const leader = sorted[0];
   const gap = leader.totalPts - (sorted[1]?.totalPts || 0);
-
   const leaderQuote = gap < 10 ? `"${gap} pts separate top from 2nd. Tense."` : gap > 50 ? `"Running away with it. Boring."` : `"Still on top. Tick tock."`;
   const bestQuote = best.gwPts >= 70 ? `"${best.gwPts} pts! Someone bring the stretcher."` : best.gwPts >= 50 ? `"${best.gwPts} pts. Top of the week."` : `"Top score this week. Just."`;
   const avgQuote = `"The average of chaos."`;
   const worstQuote = worst.gwPts <= 40 ? `"${worst.gwPts} pts. Send help."` : worst.gwPts <= 55 ? `"${worst.gwPts} pts. Not the worst ever."` : `"${worst.gwPts} pts. Just vibing."`;
-
   el.innerHTML = `<div class="glance-grid" style="padding:16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px">
-    <div class="glance-card">
-      <div class="label">🏆 Leader</div>
-      <div class="value">${leader.totalPts}</div>
-      <div class="sub">${leader.emoji} ${escapeHtml(leader.name.split(' ')[0])}</div>
-      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${leaderQuote}</div>
-    </div>
-    <div class="glance-card">
-      <div class="label">⚡ Best GW</div>
-      <div class="value">${best.gwPts}</div>
-      <div class="sub">${best.emoji} ${escapeHtml(best.name.split(' ')[0])}</div>
-      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${bestQuote}</div>
-    </div>
-    <div class="glance-card">
-      <div class="label">📊 Family Avg</div>
-      <div class="value">${avg}</div>
-      <div class="sub">this GW</div>
-      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${avgQuote}</div>
-    </div>
-    <div class="glance-card">
-      <div class="label">😅 Worst GW</div>
-      <div class="value">${worst.gwPts}</div>
-      <div class="sub">${worst.emoji} ${escapeHtml(worst.name.split(' ')[0])}</div>
-      <div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${worstQuote}</div>
-    </div>
+    <div class="glance-card"><div class="label">🏆 Leader</div><div class="value">${leader.totalPts}</div><div class="sub">${leader.emoji} ${escapeHtml(leader.name.split(' ')[0])}</div><div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${leaderQuote}</div></div>
+    <div class="glance-card"><div class="label">⚡ Best GW</div><div class="value">${best.gwPts}</div><div class="sub">${best.emoji} ${escapeHtml(best.name.split(' ')[0])}</div><div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${bestQuote}</div></div>
+    <div class="glance-card"><div class="label">📊 Family Avg</div><div class="value">${avg}</div><div class="sub">this GW</div><div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${avgQuote}</div></div>
+    <div class="glance-card"><div class="label">😅 Worst GW</div><div class="value">${worst.gwPts}</div><div class="sub">${worst.emoji} ${escapeHtml(worst.name.split(' ')[0])}</div><div style="font-size:0.7rem;font-style:italic;color:var(--muted);margin-top:8px;line-height:1.3">${worstQuote}</div></div>
   </div>`;
 }
 
@@ -2437,8 +2222,7 @@ function renderHistory() {
   const maxPts = Math.max(...gws.map(g => g.points), 1);
   chartPoints.innerHTML = `<div class="chart-bars">${gws.map(g => `
     <div class="chart-bar me" style="height:${(g.points / maxPts) * 180}px" title="GW${g.event}: ${g.points} pts">
-      <div class="bar-value">${g.points}</div>
-      <div class="bar-label">${g.event}</div>
+      <div class="bar-value">${g.points}</div><div class="bar-label">${g.event}</div>
     </div>`).join('')}</div>`;
   const ranks = gws.map(g => g.overall_rank).filter(r => r > 0);
   if (ranks.length > 1) {
@@ -2553,7 +2337,6 @@ async function openPerfModal(playerId) {
     { label: '🎯 DEFCON', value: defconPts, cls: 'mint' },
   ].filter(b => b.value !== 0);
   const maxBar = Math.max(...barData.map(b => b.value), 1);
-
   const html = `
     <div class="perf-header">
       ${p.photo ? `<img src="${p.photo}" alt="" onerror="this.style.display='none'">` : ''}
@@ -2582,13 +2365,7 @@ async function openPerfModal(playerId) {
         <div class="perf-total"><span>Total</span><span class="perf-points">${totalPts} pts</span></div>
       </div>
     </div>
-    ${barData.length > 1 ? `
-      <div class="perf-section">
-        <div class="perf-section-title">📊 Contribution Breakdown</div>
-        <div class="perf-bar-chart">
-          ${barData.map(b => `<div class="perf-bar-row"><span>${b.label}</span><div class="perf-bar-track"><div class="perf-bar-fill ${b.cls}" style="width:${(b.value / maxBar) * 100}%"></div></div><span style="text-align:right;font-weight:800;color:var(--mint)">+${b.value}</span></div>`).join('')}
-        </div>
-      </div>` : ''}
+    ${barData.length > 1 ? `<div class="perf-section"><div class="perf-section-title">📊 Contribution Breakdown</div><div class="perf-bar-chart">${barData.map(b => `<div class="perf-bar-row"><span>${b.label}</span><div class="perf-bar-track"><div class="perf-bar-fill ${b.cls}" style="width:${(b.value / maxBar) * 100}%"></div></div><span style="text-align:right;font-weight:800;color:var(--mint)">+${b.value}</span></div>`).join('')}</div></div>` : ''}
     <div class="perf-section">
       <div class="perf-section-title">📊 Season Overview</div>
       <div class="perf-info-grid">
@@ -2600,24 +2377,13 @@ async function openPerfModal(playerId) {
         <div class="perf-info-card"><div class="label">Minutes</div><div class="value">${el2.minutes || 0}</div></div>
       </div>
     </div>
-    ${nextFixtures.length ? `
-      <div class="perf-section">
-        <div class="perf-section-title">📅 Next Fixtures</div>
-        <div class="perf-fixtures">
-          ${nextFixtures.map(f => {
-            const isHome = f.team_h === p.teamId;
-            const opp = isHome ? f.team_a : f.team_h;
-            const diff = isHome ? f.team_h_difficulty : f.team_a_difficulty;
-            const oppInfo = getTeamInfo(opp);
-            return `<div class="perf-fixture">
-              <span class="fixture-gw">GW${f.event}</span>
-              <img src="${oppInfo.badge}" onerror="this.style.display='none'">
-              <span style="flex:1;font-weight:700">${isHome ? 'vs' : '@'} ${escapeHtml(oppInfo.short)}</span>
-              <span class="fixture-diff" data-diff="${diff}">${diff}</span>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>` : ''}
+    ${nextFixtures.length ? `<div class="perf-section"><div class="perf-section-title">📅 Next Fixtures</div><div class="perf-fixtures">${nextFixtures.map(f => {
+      const isHome = f.team_h === p.teamId;
+      const opp = isHome ? f.team_a : f.team_h;
+      const diff = isHome ? f.team_h_difficulty : f.team_a_difficulty;
+      const oppInfo = getTeamInfo(opp);
+      return `<div class="perf-fixture"><span class="fixture-gw">GW${f.event}</span><img src="${oppInfo.badge}" onerror="this.style.display='none'"><span style="flex:1;font-weight:700">${isHome ? 'vs' : '@'} ${escapeHtml(oppInfo.short)}</span><span class="fixture-diff" data-diff="${diff}">${diff}</span></div>`;
+    }).join('')}</div></div>` : ''}
     ${p.news ? `<div class="perf-injury-note">⚠️ ${escapeHtml(p.news)}</div>` : ''}
     <div class="modal-actions">
       <button class="btn" onclick="quickTransferOut('${p.id}')">🔄 Transfer Out</button>
@@ -2627,7 +2393,6 @@ async function openPerfModal(playerId) {
   document.getElementById('perf-modal-content').innerHTML = html;
   document.getElementById('perf-modal').classList.add('active');
 }
-
 function quickTransferOut(playerId) {
   const p = state.players.find(x => x.id === playerId);
   if (!p) return;
@@ -2729,7 +2494,6 @@ function optimizeLineup() {
       if (pl) pl.order = pos++;
     });
   });
-  // FIX: bench GK must be first in bench order
   const benchGK = bench.filter(b => b.pos === 'GK');
   const benchOthers = bench.filter(b => b.pos !== 'GK');
   const orderedBench = [...benchGK, ...benchOthers];
@@ -2746,7 +2510,6 @@ function optimizeLineup() {
 /* ========== MODALS ========== */
 let editingPlayerId = null;
 let editingPlanId = null;
-
 function openPlayerModal(id = null) {
   editingPlayerId = id;
   fillDatalists();
