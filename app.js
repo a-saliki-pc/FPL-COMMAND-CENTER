@@ -5,7 +5,6 @@
 const PROXY = 'https://fplworker.adyb-saliki.workers.dev/?url=';
 const FPL_API = 'https://fantasy.premierleague.com/api';
 const IMG_BASE = 'https://resources.premierleague.com/premierleague/photos/players/110x140';
-const BADGE_BASE = 'https://resources.premierleague.com/premierleague25/badges';
 
 const FAMILY = [
   { id: '1115676', name: 'Adyb Saliki',    emoji: '🧠' },
@@ -15,42 +14,18 @@ const FAMILY = [
   { id: '6849321', name: 'Zakaria Said',   emoji: '😎' },
 ];
 
-const DEFAULT_NICKNAMES = {
-  '1115676': 'The Tactician 🧠', '3719511': 'The Rocket 🚀',
-  '3844150': 'The Gambler 🎲', '1115993': 'The Turtle 🐢', '6849321': 'The Vibes Merchant 😎',
-};
-let NICKNAMES = { ...DEFAULT_NICKNAMES };
-
-const SHAME_NICKNAMES = ['Ciment Bag 🛍️','Backpack 🎒','The Waterboy 💧','Benchwarmer 🪑','The Wooden Spoon 🥄','Bin Bag 🗑️','The Mascot 🐔','Sticky Gloves 🧤','The Pylon 🚧','Discount Mbappé 🥴'];
-const BURN_LEADER = ["Top of the pile. Don't let it slip.", 'Enjoying the view from the summit. For now.'];
-const BURN_MID = ['Floating in mediocrity. Classic.', 'The definition of "meh".', 'Not good, not bad. Just there.'];
-const BURN_BOTTOM = ['The wooden spoon is warming up.', 'Sweating more than the players.', 'The bin is calling.'];
-const BURN_LAST_EXTRA = ['Last place. Legendary effort to get here.', 'You are the reason the group chat exists.', 'Statistically the worst. Emotionally too.'];
-const ROAST_WEEKLY = ["Family group chat is going to be spicy.", "Somebody's getting roasted in the WhatsApp group."];
-
 const POS_MAP = { 1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD' };
 const POS_ORDER = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
 const RANK_EMOJI = ['👑', '🐐', '🥉', '😴', '🐌'];
-const CHIP_EMOJI = { wildcard: '🃏', bboost: '🎲', '3xc': '⚡', freehit: '🏠' };
-const CHIP_NAME = { wildcard: 'Wildcard', bboost: 'Bench Boost', '3xc': 'Triple Captain', freehit: 'Free Hit' };
-const MOOD_EMOJI = { hot: '🔥', climbing: '📈', steady: '➡️', slipping: '📉', dead: '💀' };
-
-(function restoreNicknames() {
-  try { Object.assign(NICKNAMES, JSON.parse(localStorage.getItem('fpl-cc-nicknames') || '{}')); } catch (e) {}
-})();
 
 let state = null;
 let teamId = null;
 let pickedId = null;
-let liveDataCache = {};
-let fixturesCache = {};
 let squadView = localStorage.getItem('fpl-cc-squad-view') || 'pitch';
 let planningMode = false;
-let plannedTeam = null;
-let planningGW = null;
 
 function emptyState() {
-  return { players: [], plans: [], budget: 100, bank: 0, freeTransfers: 1, managerName: '', bootstrap: null, familyData: null, currentGW: null, nextGW: null, nextDeadline: null, lastSync: 0 };
+  return { players: [], plans: [], budget: 100, bank: 0, freeTransfers: 1, managerName: '', bootstrap: null, familyData: null, currentGW: null };
 }
 function loadFor(id) {
   try {
@@ -74,22 +49,15 @@ function toast(msg, isError = false) {
   requestAnimationFrame(() => t.classList.add('show'));
   setTimeout(() => t.classList.remove('show'), 3200);
 }
-function randomQuote(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-function fmtRank(r) { return (!r || r <= 0) ? '—' : '#' + r.toLocaleString(); }
 
-function applyTheme(mode) {
-  const isLight = mode === 'light';
-  document.documentElement.classList.toggle('light-mode', isLight);
-  document.body.classList.toggle('light-mode', isLight);
-  ['theme-toggle-welcome', 'theme-toggle-app'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = isLight ? '☀️' : '🌙'; });
-}
 function toggleTheme() {
-  const next = document.body.classList.contains('light-mode') ? 'dark' : 'light';
-  localStorage.setItem('fpl-cc-theme', next); applyTheme(next); toast(next === 'light' ? '☀️ Light mode' : '🌙 Dark mode');
+  const isLight = document.body.classList.toggle('light-mode');
+  document.documentElement.classList.toggle('light-mode', isLight);
+  localStorage.setItem('fpl-cc-theme', isLight ? 'light' : 'dark');
+  document.getElementById('theme-toggle-app').textContent = isLight ? '☀️' : '🌙';
 }
-applyTheme(localStorage.getItem('fpl-cc-theme') || 'dark');
+if (localStorage.getItem('fpl-cc-theme') === 'light') { document.body.classList.add('light-mode'); document.documentElement.classList.add('light-mode'); }
 
-/* ========== SQUAD VIEW TOGGLE (Pitch → List → 3D) ========== */
 function toggleSquadView() {
   const order = ['pitch', 'list', '3d'];
   squadView = order[(order.indexOf(squadView) + 1) % order.length];
@@ -126,10 +94,9 @@ async function syncAll(showToast = true) {
     const mine = familyData.find(f => f.id === teamId);
     if (mine && mine.picks) mergeMySquad(mine.picks);
 
-    state.lastSync = Date.now();
     renderAll();
     if (showToast) toast('✅ Synced!');
-  } catch (e) { if (showToast) toast('Sync failed', true); }
+  } catch (e) { if (showToast) toast('Sync failed: ' + e.message, true); }
 }
 
 function mergeMySquad(picksData) {
@@ -141,27 +108,36 @@ function mergeMySquad(picksData) {
     if (!el) return null;
     return {
       id: uid(), fplId: el.id, name: el.web_name, pos: POS_MAP[el.element_type], price: el.now_cost / 10, team: teamMap[el.team] || '?', teamId: el.team,
-      captain: p.is_captain, vice: p.is_vice_captain, bench: p.position > 11, order: p.position, photo: `${IMG_BASE}/p${el.code}.png`, status: el.status, form: parseFloat(el.form) || 0, totalPoints: el.total_points
+      captain: p.is_captain, vice: p.is_vice_captain, bench: p.position > 11, order: p.position, photo: `${IMG_BASE}/p${el.code}.png`, status: el.status
     };
   }).filter(Boolean);
   if (picksData.entry_history) state.bank = (picksData.entry_history.bank || 0) / 10;
 }
 
 function renderAll() {
+  document.getElementById('hdr-manager').textContent = state.managerName || '—';
+  document.getElementById('hdr-points').textContent = state.familyData?.find(f => f.id === teamId)?.history?.current?.slice(-1)[0]?.total_points || '—';
+  document.getElementById('hdr-bank').textContent = fmt(state.bank);
   renderSquad();
   renderTeamView();
   updateViewToggleButtons();
+  renderLeaderboard();
 }
 
 function getSortedPlayers() { return [...state.players].sort((a,b) => (a.order ?? 99) - (b.order ?? 99)); }
 
-/* ========== SQUAD RENDERER ========== */
 function renderSquad() {
   const grid = document.getElementById('squad-grid');
   const dashPitch = document.getElementById('pitch-view-dashboard');
   if (!grid || !dashPitch) return;
   if (squadView === 'list') {
-    grid.style.display = 'grid'; dashPitch.style.display = 'none'; renderSquadList(grid);
+    grid.style.display = 'grid'; dashPitch.style.display = 'none'; 
+    grid.innerHTML = getSortedPlayers().map(p => `
+      <div class="player-card ${p.bench ? 'bench' : ''}" data-pos="${p.pos}">
+        ${p.photo ? `<img class="player-headshot" src="${p.photo}" alt="">` : ''}
+        <div class="name">${escapeHtml(p.name)} <span class="pos-badge" data-pos="${p.pos}">${p.pos}</span></div>
+        <div class="meta">${fmt(p.price)} · ${escapeHtml(p.team)}</div>
+      </div>`).join('');
   } else if (squadView === '3d') {
     grid.style.display = 'none'; dashPitch.style.display = 'block'; renderPitch3D(dashPitch, false);
   } else {
@@ -169,30 +145,15 @@ function renderSquad() {
   }
 }
 
-function renderSquadList(grid) {
-  if (!state.players.length) { grid.innerHTML = '<div class="empty">Sync to load</div>'; return; }
-  grid.innerHTML = getSortedPlayers().map(p => `
-    <div class="player-card ${p.bench ? 'bench' : ''}" data-pos="${p.pos}" onclick="openActionModal('${p.id}')">
-      ${p.photo ? `<img class="player-headshot" src="${p.photo}" alt="">` : ''}
-      <div class="name">${escapeHtml(p.name)} <span class="pos-badge" data-pos="${p.pos}">${p.pos}</span></div>
-      <div class="meta">${fmt(p.price)} · ${escapeHtml(p.team)}</div>
-    </div>`).join('');
-}
-
-/* ========== PITCH VIEW ========== */
 function renderPitchView(container, planning) {
   if (!state.players.length) { container.innerHTML = '<div class="empty">Sync to load</div>'; return; }
   let starters = state.players.filter(p => !p.bench);
   let bench = state.players.filter(p => p.bench);
-  if (planning && plannedTeam) {
-    starters = plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean);
-    bench = plannedTeam.bench.map(id => state.players.find(p => p.id === id)).filter(Boolean);
-  }
   const gk = starters.filter(p => p.pos === 'GK'), def = starters.filter(p => p.pos === 'DEF'), mid = starters.filter(p => p.pos === 'MID'), fwd = starters.filter(p => p.pos === 'FWD');
-  const capId = planning && plannedTeam ? plannedTeam.captain : state.players.find(p => p.captain)?.id;
+  const capId = state.players.find(p => p.captain)?.id;
   
   const card = (p, isBench) => `
-    <div class="pitch-card ${p.id === capId ? 'captain' : ''} ${isBench ? 'bench' : ''}" onclick="openActionModal('${p.id}')">
+    <div class="pitch-card ${p.id === capId ? 'captain' : ''} ${isBench ? 'bench' : ''}">
       ${p.id === capId ? '<div class="pitch-badge-c">C</div>' : ''}
       ${p.photo ? `<img src="${p.photo}" alt="">` : ''}
       <div class="pitch-name">${escapeHtml(p.name.split(' ').slice(-1)[0])}</div>
@@ -208,13 +169,11 @@ function renderPitchView(container, planning) {
   `;
 }
 
-/* ========== 3D PITCH VIEW ========== */
 function renderPitch3D(container, planning) {
   if (!state.players.length) { container.innerHTML = '<div class="empty">Sync to load</div>'; return; }
   container.innerHTML = `<div class="pitch-3d-wrap"><canvas id="pitch-3d-canvas"></canvas><div class="pitch-3d-hint">🖱️ Drag to orbit</div></div>`;
   setTimeout(() => {
-    const players = (planning && plannedTeam) ? plannedTeam.starters.map(id => state.players.find(p => p.id === id)).filter(Boolean) : state.players.filter(p => !p.bench);
-    if (typeof window.renderSquad3D === 'function') window.renderSquad3D('pitch-3d-canvas', players);
+    if (typeof window.renderSquad3D === 'function') window.renderSquad3D('pitch-3d-canvas', state.players.filter(p => !p.bench));
   }, 200);
 }
 
@@ -222,7 +181,7 @@ function renderTeamView() {
   const pitch = document.getElementById('pitch-view-team');
   if (!pitch) return;
   if (!state.players.length) { pitch.innerHTML = '<div class="empty">Sync to load</div>'; return; }
-  if (squadView === '3d') renderPitch3D(pitch, planningMode); else renderPitchView(pitch, planningMode);
+  if (squadView === '3d') renderPitch3D(pitch, false); else renderPitchView(pitch, false);
 }
 
 function switchView(name, el) {
@@ -234,7 +193,6 @@ function switchView(name, el) {
   if (v) v.style.display = 'block';
   if (name === 'leaderboard') renderLeaderboard();
   if (name === 'team') renderTeamView();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function pickManager(id, el) {
@@ -255,25 +213,27 @@ function startApp() {
 
 function renderLeaderboard() {
   const el = document.getElementById('leaderboard-card');
-  if (!el || !state.familyData) return;
-  el.innerHTML = state.familyData.map((m, i) => `
+  const miniEl = document.getElementById('mini-leaderboard');
+  if (!state.familyData) return;
+  const html = state.familyData.map((m, i) => `
     <div class="lb-row">
       <div class="lb-rank">${RANK_EMOJI[i] || i+1}</div>
       <div><div class="lb-name">${m.name}</div></div>
-      <div class="lb-stat lb-primary">${m.history?.current?.slice(-1)[0]?.total_points || 0}</div>
+      <div class="lb-stat">${m.history?.current?.slice(-1)[0]?.total_points || 0} pts</div>
     </div>`).join('');
+  if (el) el.innerHTML = html;
+  if (miniEl) miniEl.innerHTML = html;
 }
 
-/* ========== BOOT ========== */
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('manager-picker').innerHTML = FAMILY.map(m => `<button class="manager-pill" data-id="${m.id}" onclick="pickManager('${m.id}', this)">${m.emoji} ${m.name}</button>`).join('');
 });
 
 /* =========================================================
-   3D ENGINE (Global OrbitControls Fix)
+   3D ENGINE (Fixed)
    ========================================================= */
 let scene3d, camera3d, renderer3d, controls3d, pitchGroup, playersGroup;
-let animationId = null, currentCanvasId = null, isDragging = false;
+let animationId = null, currentCanvasId = null;
 const PITCH_W = 68, PITCH_H = 105;
 const POS_COLOR = { GK: 0xffb92e, DEF: 0x3b82f6, MID: 0x00ff87, FWD: 0xff2882 };
 
@@ -290,7 +250,7 @@ function makePlayerBlock(player, isCap) {
   }
   if (isCap) {
     const b = new THREE.Mesh(new THREE.BoxGeometry(size*0.5, size*0.5, size*0.5), new THREE.MeshBasicMaterial({ color: 0xffb92e }));
-    b.position.y = size*3.6; b.userData.badgeSpin = true; g.add(b);
+    b.position.y = size*3.6; g.add(b);
   }
   return g;
 }
