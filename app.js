@@ -334,7 +334,6 @@ window.renderSquad3D = function(canvasId, players) {
     scene3d.add(new THREE.AmbientLight(0xffffff, 0.8));
     const sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(30, 80, 40); scene3d.add(sun);
 
-    // FIX: THREE.OrbitControls (No dot) for standard script load
     controls3d = new THREE.OrbitControls(camera3d, canvas);
     controls3d.enableDamping = true; controls3d.target.set(0, 0, 0);
     
