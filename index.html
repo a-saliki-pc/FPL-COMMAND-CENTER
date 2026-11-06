@@ -4,6 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover"/>
 <meta name="theme-color" content="#0d0221"/>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>⚡ FPL Command Center</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +18,6 @@
 <div class="orb orb-2"></div>
 <div class="orb orb-3"></div>
 
-<!-- WELCOME -->
 <div id="welcome" class="welcome">
   <button class="theme-toggle welcome-theme-toggle" onclick="toggleTheme()" id="theme-toggle-welcome" title="Toggle theme">🌙</button>
   <div class="welcome-card">
@@ -32,32 +33,20 @@
       <input type="number" id="welcome-team-id" placeholder="e.g. 1115676" inputmode="numeric">
     </div>
     <button class="btn primary big" onclick="startApp()">🚀 Open My Planner</button>
-    <div class="welcome-links">
-      <a href="#" onclick="showHelp();return false;">❓ How does this work?</a>
-    </div>
   </div>
 </div>
 
-<!-- MAIN APP -->
 <div id="app" style="display:none">
-
 <header>
   <div class="header-inner">
     <div class="logo"><span>⚡</span> <span class="logo-text">FPL COMMAND CENTER</span></div>
     <div class="header-stats">
       <div class="header-stat"><div class="label">Manager</div><div class="value" id="hdr-manager">—</div></div>
       <div class="header-stat"><div class="label">Total</div><div class="value" id="hdr-points">—</div></div>
-      <div class="header-stat"><div class="label">Rank</div><div class="value" id="hdr-rank">—</div></div>
       <div class="header-stat"><div class="label">Bank</div><div class="value" id="hdr-bank">£0.0</div></div>
-      <div class="header-stat"><div class="label">Value</div><div class="value" id="hdr-value">£0.0</div></div>
-      <div class="header-stat"><div class="label">FT</div><div class="value" id="hdr-ft">1</div></div>
-      <div class="header-stat countdown" id="hdr-deadline-wrap">
-        <div class="label">Deadline</div>
-        <div class="value" id="hdr-deadline">—</div>
-      </div>
-      <div class="sync-dot-wrap" id="sync-dot-wrap" title="Sync status"><span class="sync-dot fresh" id="sync-dot"></span></div>
-      <button class="btn small theme-toggle" onclick="toggleTheme()" id="theme-toggle-app" title="Toggle theme">🌙</button>
-      <button class="btn small" onclick="logout()" title="Switch manager">⇄</button>
+      <div class="sync-dot-wrap" id="sync-dot-wrap"><span class="sync-dot fresh" id="sync-dot"></span></div>
+      <button class="btn small theme-toggle" onclick="toggleTheme()" id="theme-toggle-app">🌙</button>
+      <button class="btn small" onclick="logout()">⇄</button>
     </div>
   </div>
 </header>
@@ -72,26 +61,14 @@
     <button class="main-tab" data-view="players" onclick="switchView('players', this)"><span class="tab-emoji">🔍</span> <span class="tab-text">Players</span></button>
   </div>
 
-  <!-- DASHBOARD -->
   <div id="view-dashboard" class="view active">
     <section>
       <div class="section-title">🔄 Sync</div>
-      <div class="squad-controls">
-        <button class="btn primary big" onclick="syncAll(true)" id="sync-btn">🔄 Sync All from FPL</button>
-        <span class="sync-status" id="sync-status">Press S to sync</span>
-      </div>
-    </section>
-    <section>
-      <div class="section-title">📊 This GW at a Glance</div>
-      <div id="gw-glance-banner"></div>
+      <div class="squad-controls"><button class="btn primary big" onclick="syncAll(true)" id="sync-btn">🔄 Sync All from FPL</button></div>
     </section>
     <section>
       <div class="section-title">©️ Captain Suggestion</div>
       <div class="leaderboard-card" id="captain-suggestion"></div>
-    </section>
-    <section>
-      <div class="section-title">💹 Price Changes</div>
-      <div class="leaderboard-card" id="price-changes"></div>
     </section>
     <section>
       <div class="section-title">🏆 Live Standings</div>
@@ -100,17 +77,12 @@
     <section>
       <div class="section-title">📊 Overview</div>
       <div class="stats-grid">
-        <div class="stat-card"><div class="label">Squad Size</div><div class="value" id="stat-size">0/15</div><div class="sub" id="stat-size-sub">Sync to load</div></div>
-        <div class="stat-card cyan"><div class="label">GW Points</div><div class="value" id="stat-gwpts">—</div><div class="sub" id="stat-gwpts-sub">This week</div></div>
-        <div class="stat-card pink"><div class="label">Best GW</div><div class="value" id="stat-best">—</div><div class="sub" id="stat-best-sub">Season best</div></div>
-        <div class="stat-card gold"><div class="label">Worst GW</div><div class="value" id="stat-worst">—</div><div class="sub" id="stat-worst-sub">Season worst</div></div>
+        <div class="stat-card"><div class="label">Squad Size</div><div class="value" id="stat-size">0/15</div></div>
+        <div class="stat-card cyan"><div class="label">GW Points</div><div class="value" id="stat-gwpts">—</div></div>
       </div>
     </section>
     <section>
-      <div class="section-title">
-        👥 My Squad
-        <span class="hint-inline"><button class="view-toggle" id="view-toggle-dashboard" onclick="toggleSquadView()">📋 List</button></span>
-      </div>
+      <div class="section-title">👥 My Squad <span class="hint-inline"><button class="view-toggle" id="view-toggle-dashboard" onclick="toggleSquadView()">📋 List</button></span></div>
       <div id="squad-container">
         <div class="squad-grid" id="squad-grid"></div>
         <div class="pitch-view" id="pitch-view-dashboard" style="display:none"></div>
@@ -118,35 +90,21 @@
     </section>
   </div>
 
-  <!-- MY TEAM -->
   <div id="view-team" class="view" style="display:none">
     <section>
-      <div class="section-title">
-        ⚽ My Team
-        <span class="hint-inline">
-          <button class="view-toggle" id="view-toggle-team" onclick="toggleSquadView()">📋 List</button>
-          <button class="btn small primary" id="plan-next-gw-btn" onclick="enterPlanningMode()">🗓 Plan Next GW</button>
-        </span>
-      </div>
-      <div id="team-summary-banner" class="team-summary-banner"></div>
-      <div id="team-container">
-        <div class="pitch-view" id="pitch-view-team"></div>
-      </div>
+      <div class="section-title">⚽ My Team <span class="hint-inline"><button class="view-toggle" id="view-toggle-team" onclick="toggleSquadView()">📋 List</button></span></div>
+      <div id="pitch-view-team" class="pitch-view"></div>
     </section>
   </div>
 
-  <!-- OTHER TABS -->
-  <div id="view-planner" class="view" style="display:none"><div class="section-title">🗓 Season Planner</div><div class="season-planner" id="season-planner"></div></div>
+  <div id="view-planner" class="view" style="display:none"><div class="section-title">🗓 Season Planner</div></div>
   <div id="view-leaderboard" class="view" style="display:none">
     <div class="section-title">🔥 Weekly Roast</div><div class="roast-card" id="weekly-roast"></div>
     <div class="section-title">🏆 Standings</div><div class="leaderboard-card" id="leaderboard-card"></div>
   </div>
-  <div id="view-history" class="view" style="display:none"><div class="section-title">📈 Points</div><div class="chart-card" id="chart-points"></div></div>
-  <div id="view-players" class="view" style="display:none"><div class="section-title">🔍 Search</div><div class="players-grid" id="players-grid"></div></div>
-
+  <div id="view-history" class="view" style="display:none"><div class="section-title">📈 History</div></div>
+  <div id="view-players" class="view" style="display:none"><div class="section-title">🔍 Search</div></div>
 </main>
-
-<footer>⚡ FPL Command Center v13</footer>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -157,6 +115,5 @@
 
 <!-- Load App -->
 <script src="app.js"></script>
-
 </body>
 </html>
